@@ -36,8 +36,6 @@ Dynamic Aim comes with an intuitive, minimalistic UI powered by **Nebula Softwor
 
 ---
 
-## 🔧 Configuration Example
-
 👤 Author
 Created by Sporer66846
 UI powered by Nebula Softworks
