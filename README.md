@@ -38,22 +38,6 @@ Dynamic Aim comes with an intuitive, minimalistic UI powered by **Nebula Softwor
 
 ## 🔧 Configuration Example
 
-```lua
-local Aimbot = {
-    Enabled = true,
-    TargetPart = AimbotTargetPart.Head,
-    FOVCircle = true,
-    FOV = 150,
-    Range = 1000,
-    Smoothness = 0.5,
-    Filtering = AimbotFiltering.ClosestToMouse,
-    Prediction = true,
-    BulletSpeed = 1500,
-    BulletDrop = true,
-    BulletDropAmount = 50,
-}
-```
-
 👤 Author
 Created by Sporer66846
 UI powered by Nebula Softworks
