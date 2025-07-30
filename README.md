@@ -44,7 +44,7 @@ UI powered by Nebula Softworks
 This project is closed-source and distributed under a proprietary license.
 You may use the software for its intended purpose but may not reverse-engineer, modify, redistribute, or deobfuscate the code.
 
-For full legal terms, see the LICENSE file.
+For full legal terms, see the LICENSE[https://github.com/Sporer66846/DynamicAim/blob/main/LICENSE] file.
 
 ⚠️ Disclaimer
 Dynamic Aim is provided for educational and demonstration purposes only. Use responsibly and in accordance with Roblox's Terms of Service. The author assumes no liability for misuse or violations resulting from use of this tool.
