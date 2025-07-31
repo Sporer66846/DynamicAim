@@ -436,7 +436,7 @@ local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
 }, "BulletDrop_Slider")
 
 local function getColorForPlayer(player)
-    local baseColor = Visuals.Rainbow and Visuals.CurrentColor or Color3.new(1, 0, 0)
+    local baseColor = Visuals.Rainbow and Visuals.CurrentColor or Color3.new(1, 1, 1)
     if Visuals.InverseFriends and Player:IsFriendsWith(player.UserId) then
         local h, s, v = baseColor:ToHSV()
         return Color3.fromHSV((h + 0.5) % 1, s, v) -- 180° inverted hue
@@ -616,17 +616,13 @@ local InverseFriendsToggle = ESPSettingsGroupbox:CreateToggle({
     end
 }, "InverseFriends_Toggle")
 
-local CreatorLabel = CreditsGroupbox:CreateLabel({
-    Name = "Made by Sporer66846"
+local CreditsLabel = CreditsGroupbox:CreateLabel({
+    Name = "Credits:"
+    Content = [[Script made by Sporer66846
+                UI Library made by Nebula Softworks
+                Version 1.0
+    ]]
 }, "Creator_Label")
-
-local UILibraryLabel = CreditsGroupbox:CreateLabel({
-    Name = "UI Library created by nebula softworks"
-}, "UILibrary_Label")
-
-local VersionLabel = CreditsGroupbox:CreateLabel({
-    Name = "Version 1.0"
-}, "Version_Label")
 
 local CopyBitcoinButton = DonateGroupbox:CreateButton({
     Name = "Copy Bitcoin Wallet",
