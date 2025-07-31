@@ -639,7 +639,7 @@ local CopyBitcoinButton = DonateGroupbox:CreateButton({
 
 local CopyEtheriumButton = DonateGroupbox:CreateButton({
     Name = "Copy Etherium Wallet",
-    Icon = NebulaIcons:GetIcon('bitcoin', 'Lucide'),
+    Icon = NebulaIcons:GetIcon('gpu', 'Lucide'),
     Style = 1,
     Callback = function()
         setclipboard("0x75BbcC2aaEdef8d5205c0B6DFCa85c20C9aE608A")
@@ -651,7 +651,7 @@ local CopyDiscordButton = SocialsGroupbox:CreateButton({
     Icon = NebulaIcons:GetIcon('bot', 'Lucide'),
     Style = 1,
     Callback = function()
-        setclipboard("https://discord.gg/fk75GAMgRC")
+        setclipboard("https://discord.gg/CSzZPNwUWY")
     end,
 }, "CopyDiscord_Button")
 
