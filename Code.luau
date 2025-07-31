@@ -313,6 +313,7 @@ local TargetPartDropdown = TargetPartLabel:AddDropdown({
 }, "TargetPart_Dropdown")
 
 local FOVCircle = Drawing.new("Circle")
+FOVCircle.Color = Color3.new(1, 1, 1)
 FOVCircle.Visible = Aimbot.FOVCircle
 FOVCircle.Filled = false
 FOVCircle.Thickness = 1
@@ -593,6 +594,11 @@ local RainbowToggle = ESPSettingsGroupbox:CreateToggle({
             rainbowing = RunService.RenderStepped:Connect(doRainbow)
         else
             Visuals.CurrentColor = Color3.new(1, 1, 1)
+            for _, highlight in pairs(espFolder:GetChildren()) do
+                if highlight:IsA("Highlight") then
+                    highlight.OutlineColor = Visuals.CurrentColor
+                end
+            end
             if rainbowing then
                 rainbowing:Disconnect()
                 rainbowing = nil
@@ -641,11 +647,11 @@ local CopyEtheriumButton = DonateGroupbox:CreateButton({
 }, "CopyEtherium_Button")
 
 local CopyDiscordButton = SocialsGroupbox:CreateButton({
-    Name = "Copy Etherium Wallet",
+    Name = "Copy Discord Link",
     Icon = NebulaIcons:GetIcon('bot', 'Lucide'),
     Style = 1,
     Callback = function()
-        setclipboard("0x75BbcC2aaEdef8d5205c0B6DFCa85c20C9aE608A")
+        setclipboard("https://discord.gg/fk75GAMgRC")
     end,
 }, "CopyDiscord_Button")
 
