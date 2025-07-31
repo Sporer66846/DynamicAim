@@ -619,8 +619,8 @@ local InverseFriendsToggle = ESPSettingsGroupbox:CreateToggle({
 local CreditsLabel = CreditsGroupbox:CreateLabel({
     Name = "Credits:",
     Content = [[Script made by Sporer66846
-                UI Library made by Nebula Softworks
-                Version 1.0
+    UI Library made by Nebula Softworks
+    Version 1.0
     ]],
 }, "Creator_Label")
 
