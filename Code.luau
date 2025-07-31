@@ -617,11 +617,11 @@ local InverseFriendsToggle = ESPSettingsGroupbox:CreateToggle({
 }, "InverseFriends_Toggle")
 
 local CreditsLabel = CreditsGroupbox:CreateLabel({
-    Name = "Credits:"
+    Name = "Credits:",
     Content = [[Script made by Sporer66846
                 UI Library made by Nebula Softworks
                 Version 1.0
-    ]]
+    ]],
 }, "Creator_Label")
 
 local CopyBitcoinButton = DonateGroupbox:CreateButton({
