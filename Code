@@ -653,8 +653,9 @@ local CopyDiscordButton = SocialsGroupbox:CreateButton({
 local function ReturnPlayers()
     local PlayersTable = {}
     for _, player in ipairs(Players:GetPlayers()) do
-        if table.find(PlayersTable, player) then continue end
-        table.insert(PlayersTable, player)
+        if not table.find(PlayersTable, player) then
+            table.insert(PlayersTable, player)
+        end
     end
     return PlayersTable
 end
