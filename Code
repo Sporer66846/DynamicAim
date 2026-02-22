@@ -2,7 +2,10 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
+-- [FIXED]: Added BlurEnabled = false to the boot sequence parameters
 local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()  
+Starlight.BlurEnabled = false 
+
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
 
 local Player = Players.LocalPlayer
@@ -74,12 +77,13 @@ local Window = Starlight:CreateWindow({
     Name = "Dynamic Aim",
     Subtitle = "A dynamic aiming system for Roblox games",
     Icon = 110782178856576, 
+    -- Removed DisableBlur here since we are using BlurEnabled in the library directly
     LoadingSettings = {
         Title = "Dynamic Aim",
         Subtitle = "by Sporer66846"
     },
     ConfigurationSettings = {
-        FolderName = "UserConfigs"
+        FolderName = "DynamicAimConfigs" 
     }
 })
 
@@ -89,6 +93,7 @@ local MiscallaneousSection = Window:CreateTabSection("Miscellaneous")
 local HomeTab = MainSection:CreateTab({ Name = "Home", Icon = NebulaIcons:GetIcon('home', 'Lucide'), Columns = 2 }, "Home_Tab")
 local AimbotTab = MainSection:CreateTab({ Name = "Aimbot", Icon = NebulaIcons:GetIcon('mouse', 'Lucide'), Columns = 2 }, "Aimbot_Tab")
 local VisualsTab = MainSection:CreateTab({ Name = "Visuals", Icon = NebulaIcons:GetIcon('eye', 'Lucide'), Columns = 1 }, "Visuals_Tab")
+local SettingsTab = MiscallaneousSection:CreateTab({ Name = "Settings", Icon = NebulaIcons:GetIcon('settings', 'Lucide'), Columns = 2 }, "Settings_Tab")
 local CreditsTab = MiscallaneousSection:CreateTab({ Name = "Credits", Icon = NebulaIcons:GetIcon('info', 'Lucide'), Columns = 3 }, "Credits_Tab")
 
 local CharacterGroupbox = HomeTab:CreateGroupbox({ Name = "Character", Column = 1 }, "Character_Groupbox")
@@ -96,6 +101,7 @@ local EnvironmentGroupbox = HomeTab:CreateGroupbox({ Name = "Environment", Colum
 local AimbotSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Aimbot Settings", Column = 1 }, "Aimbot_Settings_Groupbox")
 local PredictionSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Prediction Settings", Column = 2 }, "Prediction_Settings_Groupbox")
 local ESPSettingsGroupbox = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 }, "ESP_Settings_Groupbox")
+
 local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 }, "Credits_Groupbox")
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
 local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 }, "Socials_Groupbox")
@@ -284,13 +290,32 @@ local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
+local friendCache = {}
+local function isPlayerFriend(targetPlayer)
+    if friendCache[targetPlayer.UserId] ~= nil then
+        return friendCache[targetPlayer.UserId]
+    end
+
+    friendCache[targetPlayer.UserId] = false
+    task.spawn(function()
+        local success, result = pcall(function()
+            return Player:IsFriendsWith(targetPlayer.UserId)
+        end)
+        if success then
+            friendCache[targetPlayer.UserId] = result
+        end
+    end)
+    
+    return friendCache[targetPlayer.UserId]
+end
+
 local function getColorForPlayer(player)
     if Visuals.UseTeamColor and player.Team then
         return player.TeamColor.Color
     end
 
     local baseColor = Visuals.Rainbow and Visuals.CurrentColor or Color3.new(1, 1, 1)
-    if Visuals.InverseFriends and Player:IsFriendsWith(player.UserId) then
+    if Visuals.InverseFriends and isPlayerFriend(player) then
         local h, s, v = baseColor:ToHSV()
         return Color3.fromHSV((h + 0.5) % 1, s, v) 
     else
@@ -299,7 +324,6 @@ local function getColorForPlayer(player)
 end
 
 local function createESP(player)
-    -- [FIXED]: Ignore your own character
     if player == Player then return end 
     if not player.Character then return end
 
@@ -428,7 +452,13 @@ RunService.RenderStepped:Connect(function()
                     local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
                     if onScreen then
                         local text = Drawing.new("Text")
-                        text.Text = player.Name
+                        
+                        if isPlayerFriend(player) then
+                            text.Text = "(Friend) " .. player.Name
+                        else
+                            text.Text = player.Name
+                        end
+                        
                         text.Position = namePos
                         text.Size = 14
                         text.Color = colorToUse
@@ -443,6 +473,8 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+
+SettingsTab:BuildConfigGroupbox(1) 
 
 local CreditsLabel = CreditsGroupbox:CreateLabel({
     Name = "Credits:", Content = [[Script made by Sporer66846
@@ -716,3 +748,5 @@ end
 
 UserInputService.InputBegan:Connect(inputDown)
 UserInputService.InputEnded:Connect(inputUp)
+
+Starlight:LoadAutoloadConfig()
