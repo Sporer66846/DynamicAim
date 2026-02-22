@@ -45,7 +45,7 @@ local AimbotFiltering = {
 
 local Aimbot = {
     Enabled = false,
-    TeamCheck = false, -- [NEW]: Ignore teammates
+    TeamCheck = false,
     TargetPart = AimbotTargetPart.Head,
     FOVCircle = true,
     FOV = 150,
@@ -66,7 +66,7 @@ local Visuals = {
     TracerColor = Color3.fromRGB(255, 255, 255),
     Rainbow = false,
     InverseFriends = false,
-    UseTeamColor = false, -- [NEW]: Color code by team
+    UseTeamColor = false,
     CurrentColor = Color3.new(1, 1, 1),
 }
 
@@ -199,7 +199,6 @@ local AimbotToggle = AimbotSettingsGroupbox:CreateToggle({
     Callback = function(Value) Aimbot.Enabled = Value end
 }, "Aimbot_Toggle")
 
--- [NEW]: Team Check Toggle
 local TeamCheckToggle = AimbotSettingsGroupbox:CreateToggle({
     Name = "Team Check", CurrentValue = false, Style = 2,
     Callback = function(Value) Aimbot.TeamCheck = Value end
@@ -285,7 +284,6 @@ local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
--- [NEW]: Logic to determine the correct color based on Team Color, Rainbow, or Inverse Friends
 local function getColorForPlayer(player)
     if Visuals.UseTeamColor and player.Team then
         return player.TeamColor.Color
@@ -301,7 +299,10 @@ local function getColorForPlayer(player)
 end
 
 local function createESP(player)
+    -- [FIXED]: Ignore your own character
+    if player == Player then return end 
     if not player.Character then return end
+
     if not espFolder:FindFirstChild(player.Name .. "_ESP") then
         local espObject = Instance.new("Highlight")
         espObject.Name = player.Name .. "_ESP"
@@ -339,7 +340,6 @@ local ESPToggle = ESPSettingsGroupbox:CreateToggle({
     end
 }, "ESP_Toggle")
 
--- [NEW]: Use Team Color Toggle
 local UseTeamColorToggle = ESPSettingsGroupbox:CreateToggle({
     Name = "Use Team Color", CurrentValue = false, Style = 2,
     Callback = function(Value) Visuals.UseTeamColor = Value end
@@ -403,7 +403,6 @@ RunService.RenderStepped:Connect(function()
             if humanoid and humanoid.Health > 0 then
                 local colorToUse = getColorForPlayer(player)
 
-                -- [NEW]: Update the Highlight outline color to match everything else
                 if Visuals.ESP then
                     local espObj = espFolder:FindFirstChild(player.Name .. "_ESP")
                     if espObj then
@@ -506,7 +505,6 @@ local function GetClosestToMouse(playerList)
 
     for _, player in ipairs(playerList) do
         if player ~= Player then
-            -- [NEW]: Team Check
             if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
 
             local char = player.Character
@@ -533,7 +531,6 @@ local function GetClosestToPlayer(PlayersTable)
     
     for _, player in ipairs(PlayersTable) do
         if player ~= Player then
-            -- [NEW]: Team Check
             if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
 
             local char = player.Character
@@ -560,7 +557,6 @@ local function GetLowestHealth(PlayersTable)
 
     for _, player in ipairs(PlayersTable) do
         if player ~= Player then
-            -- [NEW]: Team Check
             if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
 
             local char = player.Character
