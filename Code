@@ -400,8 +400,16 @@ local InverseFriendsToggle = ESPSettingsGroupbox:CreateToggle({
     Callback = function(Value) Visuals.InverseFriends = Value end
 }, "InverseFriends_Toggle")
 
-local tracerLines = {}
-local nameTexts = {}
+-- [FIXED]: Optimized ESP Drawings Cache System
+local ESPDrawings = {}
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESPDrawings[player] then
+        ESPDrawings[player].Tracer:Remove()
+        ESPDrawings[player].NameText:Remove()
+        ESPDrawings[player] = nil
+    end
+end)
 
 local function worldToScreen(pos)
     local camera = workspace.CurrentCamera
@@ -411,61 +419,73 @@ end
 
 RunService.RenderStepped:Connect(function()
     local camera = workspace.CurrentCamera
-    for _, obj in ipairs(tracerLines) do obj:Remove() end
-    for _, obj in ipairs(nameTexts) do obj:Remove() end
-    tracerLines = {}
-    nameTexts = {}
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= Player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local char = player.Character
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local head = char:FindFirstChild("Head")
-            local humanoid = char:FindFirstChild("Humanoid")
-            
-            if humanoid and humanoid.Health > 0 then
-                local colorToUse = getColorForPlayer(player)
+        if player ~= Player then
+            -- Initialize drawing cache for the player if they don't have it
+            if not ESPDrawings[player] then
+                ESPDrawings[player] = {
+                    Tracer = Drawing.new("Line"),
+                    NameText = Drawing.new("Text")
+                }
+            end
 
-                if Visuals.ESP then
-                    local espObj = espFolder:FindFirstChild(player.Name .. "_ESP")
-                    if espObj then
-                        espObj.OutlineColor = colorToUse
-                    end
-                end
+            local tracer = ESPDrawings[player].Tracer
+            local nameText = ESPDrawings[player].NameText
 
-                if Visuals.Tracers and hrp then
-                    local screenPos, onScreen = worldToScreen(hrp.Position)
-                    if onScreen then
-                        local line = Drawing.new("Line")
-                        line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
-                        line.To = screenPos
-                        line.Color = colorToUse
-                        line.Thickness = 1.5
-                        line.Transparency = 1
-                        line.Visible = true
-                        table.insert(tracerLines, line)
-                    end
-                end
+            -- Assume invisible by default
+            tracer.Visible = false
+            nameText.Visible = false
 
-                if Visuals.ESP and head then
-                    local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
-                    if onScreen then
-                        local text = Drawing.new("Text")
-                        
-                        if isPlayerFriend(player) then
-                            text.Text = "(Friend) " .. player.Name
-                        else
-                            text.Text = player.Name
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local char = player.Character
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local head = char:FindFirstChild("Head")
+                local humanoid = char:FindFirstChild("Humanoid")
+                
+                -- Ensure the player is actually alive
+                if humanoid and humanoid.Health > 0 then
+                    local colorToUse = getColorForPlayer(player)
+
+                    -- Update Highlight Outline Color
+                    if Visuals.ESP then
+                        local espObj = espFolder:FindFirstChild(player.Name .. "_ESP")
+                        if espObj then
+                            espObj.OutlineColor = colorToUse
                         end
-                        
-                        text.Position = namePos
-                        text.Size = 14
-                        text.Color = colorToUse
-                        text.Center = true
-                        text.Outline = true
-                        text.OutlineColor = Color3.new(0, 0, 0)
-                        text.Visible = true
-                        table.insert(nameTexts, text)
+                    end
+
+                    -- Render Tracer
+                    if Visuals.Tracers and hrp then
+                        local screenPos, onScreen = worldToScreen(hrp.Position)
+                        if onScreen then
+                            tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                            tracer.To = screenPos
+                            tracer.Color = colorToUse
+                            tracer.Thickness = 1.5
+                            tracer.Transparency = 1
+                            tracer.Visible = true
+                        end
+                    end
+
+                    -- Render Name ESP
+                    if Visuals.ESP and head then
+                        local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
+                        if onScreen then
+                            if isPlayerFriend(player) then
+                                nameText.Text = "(Friend) " .. player.Name
+                            else
+                                nameText.Text = player.Name
+                            end
+                            
+                            nameText.Position = namePos
+                            nameText.Size = 14
+                            nameText.Color = colorToUse
+                            nameText.Center = true
+                            nameText.Outline = true
+                            nameText.OutlineColor = Color3.new(0, 0, 0)
+                            nameText.Visible = true
+                        end
                     end
                 end
             end
