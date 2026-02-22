@@ -1,11 +1,11 @@
+-- Disables Acrylic/Blur systems according to the Starlight documentation
+getgenv().SecureMode = true
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
--- [FIXED]: Added BlurEnabled = false to the boot sequence parameters
 local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()  
-Starlight.BlurEnabled = false 
-
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
 
 local Player = Players.LocalPlayer
@@ -77,7 +77,6 @@ local Window = Starlight:CreateWindow({
     Name = "Dynamic Aim",
     Subtitle = "A dynamic aiming system for Roblox games",
     Icon = 110782178856576, 
-    -- Removed DisableBlur here since we are using BlurEnabled in the library directly
     LoadingSettings = {
         Title = "Dynamic Aim",
         Subtitle = "by Sporer66846"
@@ -474,6 +473,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Builds the Config Groupbox inside the Settings tab
 SettingsTab:BuildConfigGroupbox(1) 
 
 local CreditsLabel = CreditsGroupbox:CreateLabel({
@@ -749,4 +749,5 @@ end
 UserInputService.InputBegan:Connect(inputDown)
 UserInputService.InputEnded:Connect(inputUp)
 
+-- Loads the autoloaded configuration
 Starlight:LoadAutoloadConfig()
