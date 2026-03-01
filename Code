@@ -1,4 +1,3 @@
--- Disables Acrylic/Blur systems according to the Starlight documentation
 getgenv().SecureMode = true
 
 local Players = game:GetService("Players")
@@ -9,482 +8,382 @@ local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starl
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
 
 local Player = Players.LocalPlayer
-local Mouse = Player:GetMouse()
-
+local camera = workspace.CurrentCamera
 local espFolder = Instance.new("Folder")
 espFolder.Parent = gethui()
 
--- Config
-local Actions = {
-    Aimbot = "ACTION_AIMBOT"
-}
+-- Logic Variables
+local ESPDrawings = {}
+local VisualizerLines = {}
+local Target = nil
+local CalibrationTarget = nil
+local AimbotConnection = nil
+local RainbowConnection = nil
+local Noclipping = nil
+local ClippingParts = {}
+local CalibrationLock = false
 
+-- State Tables
 local Main = {
-    WalkSpeedEnabled = false,
-    WalkSpeed = 16,
-    JumpPowerEnabled = false,
-    JumpPower = 50,
-    NoClipEnabled = false,
-    GravityEnabled = false,
-    Gravity = 196.2
+    WalkSpeedEnabled = false, WalkSpeed = 16,
+    JumpPowerEnabled = false, JumpPower = 50,
+    NoClipEnabled = false, GravityEnabled = false, Gravity = 196.2
 }
 
 local AimbotTargetPart = {
-    Head = "Head",
-    HumanoidRootPart = "HumanoidRootPart",
-    Torso = "Torso",
-    ["Right Arm"] = "Right Arm",
-    ["Left Arm"] = "Left Arm",
-    ["Right Leg"] = "Right Leg",
-    ["Left Leg"] = "Left Leg",
-    Legit = "Legit",
-}
-
-local AimbotFiltering = {
-    ClosestToMouse = "ClosestToMouse",
-    ClosestToPlayer = "ClosestToPlayer",
-    LowestHealth = "LowestHealth",
+    Head = "Head", HumanoidRootPart = "HumanoidRootPart", Torso = "Torso",
+    ["Right Arm"] = "Right Arm", ["Left Arm"] = "Left Arm",
+    ["Right Leg"] = "Right Leg", ["Left Leg"] = "Left Leg", Legit = "Legit"
 }
 
 local Aimbot = {
-    Enabled = false,
-    TeamCheck = false,
-    TargetPart = AimbotTargetPart.Head,
-    FOVCircle = true,
-    FOV = 150,
-    Range = 1000,
-    Smoothness = 0.5,
-    Filtering = AimbotFiltering.ClosestToMouse,
-    Prediction = false,
-    BulletSpeed = 1500,
-    BulletDrop = false,
-    BulletDropAmount = 50,
+    Enabled = false, TeamCheck = false, VisibleCheck = true,
+    TargetPart = "Head", FOVCircle = true, FOV = 150,
+    Range = 1000, Smoothness = 0.5, Filtering = "ClosestToMouse",
+    Prediction = true, BulletSpeed = 1500, BulletDrop = true, BulletDropAmount = 50,
+    Keybind = "MouseButton2", Visualizer = false
+}
+
+local Combat = {
+    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false
 }
 
 local Visuals = {
-    ESP = false,
-    ESPColor = Color3.fromRGB(255, 255, 255),
-    ESPHighlights = true,
-    Tracers = true,
-    TracerColor = Color3.fromRGB(255, 255, 255),
-    Rainbow = false,
-    InverseFriends = false,
-    UseTeamColor = false,
-    CurrentColor = Color3.new(1, 1, 1),
+    ESP = false, Tracers = true, UseTeamColor = false,
+    Rainbow = false, InverseFriends = false, CurrentColor = Color3.new(1, 1, 1)
 }
 
+-- Window Setup
 local Window = Starlight:CreateWindow({
-    Name = "Dynamic Aim",
-    Subtitle = "A dynamic aiming system for Roblox games",
-    Icon = 110782178856576, 
-    LoadingSettings = {
-        Title = "Dynamic Aim",
-        Subtitle = "by Sporer66846"
-    },
-    ConfigurationSettings = {
-        FolderName = "DynamicAimConfigs" 
-    }
+    Name = "Dynamic Aim V3",
+    Subtitle = "Precision Combat Suite",
+    Icon = 110782178856576,
+    ConfigurationSettings = { FolderName = "DynamicAimConfigs" }
 })
 
 local MainSection = Window:CreateTabSection("Main")
-local MiscallaneousSection = Window:CreateTabSection("Miscellaneous")
+local SettingsSection = Window:CreateTabSection("Miscellaneous")
 
-local HomeTab = MainSection:CreateTab({ Name = "Home", Icon = NebulaIcons:GetIcon('home', 'Lucide'), Columns = 2 }, "Home_Tab")
-local AimbotTab = MainSection:CreateTab({ Name = "Aimbot", Icon = NebulaIcons:GetIcon('mouse', 'Lucide'), Columns = 2 }, "Aimbot_Tab")
-local VisualsTab = MainSection:CreateTab({ Name = "Visuals", Icon = NebulaIcons:GetIcon('eye', 'Lucide'), Columns = 1 }, "Visuals_Tab")
-local SettingsTab = MiscallaneousSection:CreateTab({ Name = "Settings", Icon = NebulaIcons:GetIcon('settings', 'Lucide'), Columns = 2 }, "Settings_Tab")
-local CreditsTab = MiscallaneousSection:CreateTab({ Name = "Credits", Icon = NebulaIcons:GetIcon('info', 'Lucide'), Columns = 3 }, "Credits_Tab")
+local HomeTab = MainSection:CreateTab({ Name = "Home", Icon = NebulaIcons:GetIcon('home', 'Lucide'), Columns = 2 })
+local AimbotTab = MainSection:CreateTab({ Name = "Aimbot", Icon = NebulaIcons:GetIcon('mouse', 'Lucide'), Columns = 2 })
+local CombatTab = MainSection:CreateTab({ Name = "Combat", Icon = NebulaIcons:GetIcon('swords', 'Lucide'), Columns = 2 })
+local VisualsTab = MainSection:CreateTab({ Name = "Visuals", Icon = NebulaIcons:GetIcon('eye', 'Lucide'), Columns = 1 })
+local SettingsTab = SettingsSection:CreateTab({ Name = "Settings", Icon = NebulaIcons:GetIcon('settings', 'Lucide'), Columns = 2 })
+local CreditsTab = SettingsSection:CreateTab({ Name = "Credits", Icon = NebulaIcons:GetIcon('info', 'Lucide'), Columns = 3 })
 
-local CharacterGroupbox = HomeTab:CreateGroupbox({ Name = "Character", Column = 1 }, "Character_Groupbox")
-local EnvironmentGroupbox = HomeTab:CreateGroupbox({ Name = "Environment", Column = 2 }, "Environment_Groupbox")
-local AimbotSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Aimbot Settings", Column = 1 }, "Aimbot_Settings_Groupbox")
-local PredictionSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Prediction Settings", Column = 2 }, "Prediction_Settings_Groupbox")
-local ESPSettingsGroupbox = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 }, "ESP_Settings_Groupbox")
+-- FOV Circle Drawing
+local FOVCircleDrawing = Drawing.new("Circle")
+FOVCircleDrawing.Color = Color3.new(1, 1, 1)
+FOVCircleDrawing.Filled = false
+FOVCircleDrawing.Thickness = 1
+FOVCircleDrawing.NumSides = 90
+FOVCircleDrawing.Visible = false
 
-local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 }, "Credits_Groupbox")
-local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
-local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 }, "Socials_Groupbox")
-
--- Character Settings
-local WalkSpeedToggle = CharacterGroupbox:CreateToggle({
-    Name = "WalkSpeed Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Main.WalkSpeedEnabled = Value
-        if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.WalkSpeed = Value and Main.WalkSpeed or 16
-        end
+RunService.Heartbeat:Connect(function()
+    FOVCircleDrawing.Visible = (Aimbot.Enabled and Aimbot.FOVCircle)
+    if FOVCircleDrawing.Visible then
+        FOVCircleDrawing.Position = UserInputService:GetMouseLocation()
+        FOVCircleDrawing.Radius = Aimbot.FOV
     end
-}, "WalkSpeed_Toggle")
+end)
 
-local WalkSpeedSlider = CharacterGroupbox:CreateSlider({
-    Name = "WalkSpeed", Icon = NebulaIcons:GetIcon('chevrons-up', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.WalkSpeed or 16,
-    Callback = function(Value)
-        Main.WalkSpeed = Value
-        if Main.WalkSpeedEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.WalkSpeed = Value
-        end
-    end
-}, "WalkSpeed_Slider")
+-- UI Elements: Home (Restored JumpPower and NoClip)
+local CharGroup = HomeTab:CreateGroupbox({ Name = "Character", Column = 1 })
+CharGroup:CreateToggle({ Name = "WalkSpeed Enabled", Callback = function(v) 
+    Main.WalkSpeedEnabled = v 
+    if not v and Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.WalkSpeed = 16 end
+end })
+CharGroup:CreateSlider({ Name = "WalkSpeed", Range = {0, 500}, Increment = 1, CurrentValue = 16, Callback = function(v) Main.WalkSpeed = v end })
 
-local JumpPowerToggle = CharacterGroupbox:CreateToggle({
-    Name = "JumpPower Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Main.JumpPowerEnabled = Value
-        if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.JumpPower = Value and Main.JumpPower or 50
-        end
-    end
-}, "JumpPower_Toggle")
+CharGroup:CreateToggle({ Name = "JumpPower Enabled", Callback = function(v) 
+    Main.JumpPowerEnabled = v 
+    if not v and Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.JumpPower = 50 end
+end })
+CharGroup:CreateSlider({ Name = "JumpPower", Range = {0, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) Main.JumpPower = v end })
 
-local JumpPowerSlider = CharacterGroupbox:CreateSlider({
-    Name = "JumpPower", Icon = NebulaIcons:GetIcon('arrow-big-up-dash', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.JumpPower or 50,
-    Callback = function(Value)
-        Main.JumpPower = Value
-        if Main.JumpPowerEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.JumpPower = Value
-        end
-    end
-}, "JumpPower_Slider")
-
-local Noclipping = nil
-local ClippingParts = {}
-
-local NoClipToggle = CharacterGroupbox:CreateToggle({
-    Name = "NoClip Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Main.NoClipEnabled = Value
-        if Value then
-            ClippingParts = {}
-            local function NoclipLoop()
-                if Main.NoClipEnabled == true and Player.Character ~= nil then
-                    for _, child in pairs(Player.Character:GetDescendants()) do
-                        if child:IsA("BasePart") and child.CanCollide == true then
-                            child.CanCollide = false
-                            if not table.find(ClippingParts, child) then
-                                table.insert(ClippingParts, child)
-                            end
-                        end
+CharGroup:CreateToggle({ Name = "NoClip Enabled", Callback = function(v)
+    Main.NoClipEnabled = v
+    if v then
+        ClippingParts = {}
+        Noclipping = RunService.Stepped:Connect(function()
+            if Player.Character then
+                for _, child in pairs(Player.Character:GetDescendants()) do
+                    if child:IsA("BasePart") and child.CanCollide then
+                        child.CanCollide = false
+                        if not table.find(ClippingParts, child) then table.insert(ClippingParts, child) end
                     end
                 end
             end
-            Noclipping = RunService.Stepped:Connect(NoclipLoop)
-        else
-            if Noclipping ~= nil then
-                Noclipping:Disconnect()
-                Noclipping = nil
-            end
-            for _, part in pairs(ClippingParts) do
-                if part and part.Parent then
-                    part.CanCollide = true
-                end
-            end
-            ClippingParts = {}
-        end
+        end)
+    else
+        if Noclipping then Noclipping:Disconnect() Noclipping = nil end
+        for _, part in pairs(ClippingParts) do if part and part.Parent then part.CanCollide = true end end
+        ClippingParts = {}
     end
-}, "NoClip_Toggle")
+end })
 
-local GravityToggle = EnvironmentGroupbox:CreateToggle({
-    Name = "Gravity Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Main.GravityEnabled = Value
-        workspace.Gravity = Value and Main.Gravity or 196.2
-    end
-}, "Gravity_Toggle")
+local EnvGroup = HomeTab:CreateGroupbox({ Name = "Environment", Column = 2 })
+EnvGroup:CreateToggle({ Name = "Gravity Enabled", Callback = function(v) 
+    Main.GravityEnabled = v 
+    workspace.Gravity = v and Main.Gravity or 196.2
+end })
+EnvGroup:CreateSlider({ Name = "Gravity", Range = {0, 500}, Increment = 0.1, CurrentValue = 196.2, Callback = function(v) Main.Gravity = v end })
 
-local GravitySlider = EnvironmentGroupbox:CreateSlider({
-    Name = "Gravity", Icon = NebulaIcons:GetIcon('earth', 'Lucide'), Range = {0, 500}, Increment = 0.1, CurrentValue = Main.Gravity or 196.2,
-    Callback = function(Value)
-        Main.Gravity = Value
-        if Main.GravityEnabled then workspace.Gravity = Value end
-    end
-}, "Gravity_Slider")
+-- UI Elements: Aimbot Settings (Restored Filtering and Target Part)
+local AimGroup = AimbotTab:CreateGroupbox({ Name = "Aimbot Settings", Column = 1 })
+AimGroup:CreateToggle({ Name = "Enabled", Callback = function(v) Aimbot.Enabled = v end })
+AimGroup:CreateToggle({ Name = "Team Check", Callback = function(v) Aimbot.TeamCheck = v end })
+AimGroup:CreateToggle({ Name = "Visible Check", CurrentValue = true, Callback = function(v) Aimbot.VisibleCheck = v end })
 
-local AimbotToggle = AimbotSettingsGroupbox:CreateToggle({
-    Name = "Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value) Aimbot.Enabled = Value end
-}, "Aimbot_Toggle")
-
-local TeamCheckToggle = AimbotSettingsGroupbox:CreateToggle({
-    Name = "Team Check", CurrentValue = false, Style = 2,
-    Callback = function(Value) Aimbot.TeamCheck = Value end
-}, "TeamCheck_Toggle")
-
-local TargetPartLabel = AimbotSettingsGroupbox:CreateLabel({ Name = "Target Part" }, "TargetPart_Label")
-local TargetPartDropdown = TargetPartLabel:AddDropdown({
+local TargetPartLabel = AimGroup:CreateLabel({ Name = "Target Part" })
+TargetPartLabel:AddDropdown({
     Options = {"Head", "HumanoidRootPart", "Torso", "Right Arm", "Left Arm", "Right Leg", "Left Leg", "Legit"},
     CurrentOption = {"Head"}, MultipleOptions = false,
     Callback = function(Options) Aimbot.TargetPart = AimbotTargetPart[Options[1]] end,
-}, "TargetPart_Dropdown")
+})
 
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Color = Color3.new(1, 1, 1)
-FOVCircle.Visible = Aimbot.FOVCircle
-FOVCircle.Filled = false
-FOVCircle.Thickness = 1
-FOVCircle.NumSides = 90
-
-local circleUpdates = nil
-local FOVCircleToggle = AimbotSettingsGroupbox:CreateToggle({
-    Name = "FOV Circle", CurrentValue = true, Style = 2,
-    Callback = function(Value)
-        Aimbot.FOVCircle = Value
-        if Value then
-            FOVCircle.Visible = true
-            circleUpdates = RunService.Heartbeat:Connect(function()
-                local mouseLoc = UserInputService:GetMouseLocation()
-                FOVCircle.Position = Vector2.new(mouseLoc.X, mouseLoc.Y)
-            end)
-        else
-            FOVCircle.Visible = false
-            if circleUpdates then
-                circleUpdates:Disconnect()
-                circleUpdates = nil
-            end
-        end
-    end
-}, "FOVCircle_Toggle")
-
-local FOVSlider = AimbotSettingsGroupbox:CreateSlider({
-    Name = "FOV", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV or 150,
-    Callback = function(Value)
-        Aimbot.FOV = Value
-        if Aimbot.FOVCircle then FOVCircle.Radius = Value end
-    end
-}, "FOV_Slider")
-
-local RangeSlider = AimbotSettingsGroupbox:CreateSlider({
-    Name = "Range", Icon = NebulaIcons:GetIcon('binoculars', 'Lucide'), Range = {0, 10000}, Increment = 1, CurrentValue = Aimbot.Range or 1000,
-    Callback = function(Value) Aimbot.Range = Value end
-}, "Range_Slider")
-
-local SmoothnessSlider = AimbotSettingsGroupbox:CreateSlider({
-    Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), Range = {0.1, 1}, Increment = 0.05, CurrentValue = Aimbot.Smoothness or 0.5,
-    Callback = function(Value) Aimbot.Smoothness = Value end
-}, "Smoothness_Slider")
-
-local FilteringLabel = AimbotSettingsGroupbox:CreateLabel({ Name = "Filtering" }, "Filtering_Label")
-local FilteringDropdown = FilteringLabel:AddDropdown({
+local FilterLabel = AimGroup:CreateLabel({ Name = "Filtering" })
+FilterLabel:AddDropdown({
     Options = {"ClosestToMouse", "ClosestToPlayer", "LowestHealth"},
     CurrentOption = {"ClosestToMouse"}, MultipleOptions = false,
-    Callback = function(Options) Aimbot.Filtering = AimbotFiltering[Options[1]] end,
-}, "Filtering_Dropdown")
+    Callback = function(Options) Aimbot.Filtering = Options[1] end,
+})
 
-local PredictionToggle = PredictionSettingsGroupbox:CreateToggle({
-    Name = "Prediction", CurrentValue = false, Style = 2,
-    Callback = function(Value) Aimbot.Prediction = Value end
-}, "Prediction_Toggle")
+AimGroup:CreateToggle({ Name = "FOV Circle", CurrentValue = true, Callback = function(v) Aimbot.FOVCircle = v end })
+AimGroup:CreateSlider({ Name = "FOV Radius", Range = {0, 1000}, Increment = 1, CurrentValue = 150, Callback = function(v) Aimbot.FOV = v end })
+AimGroup:CreateSlider({ Name = "Target Range", Range = {0, 10000}, Increment = 1, CurrentValue = 1000, Callback = function(v) Aimbot.Range = v end })
+AimGroup:CreateSlider({ Name = "Smoothness", Range = {0.1, 1}, Increment = 0.05, CurrentValue = 0.5, Callback = function(v) Aimbot.Smoothness = v end })
+AimGroup:CreateKeybind({
+    Name = "Aimbot Key", CurrentKeybind = "MouseButton2", HoldToInteract = true,
+    Callback = function(key) Aimbot.Keybind = typeof(key) == "EnumItem" and key.Name or key end
+})
 
-local BulletSpeedSlider = PredictionSettingsGroupbox:CreateSlider({
-    Name = "Bullet Speed", Icon = NebulaIcons:GetIcon('gauge', 'Lucide'), Range = {10, 10000}, Increment = 10, CurrentValue = Aimbot.BulletSpeed or 1500,
-    Callback = function(Value) Aimbot.BulletSpeed = Value end
-}, "BulletSpeed_Slider")
+local PredGroup = AimbotTab:CreateGroupbox({ Name = "Prediction Settings", Column = 2 })
+PredGroup:CreateToggle({ Name = "Prediction", CurrentValue = true, Callback = function(v) Aimbot.Prediction = v end })
+PredGroup:CreateToggle({ Name = "Bullet Drop", CurrentValue = true, Callback = function(v) Aimbot.BulletDrop = v end })
+PredGroup:CreateToggle({ Name = "Show Projectile Path", Callback = function(v) 
+    Aimbot.Visualizer = v 
+    if not v then for _, l in pairs(VisualizerLines) do l.Visible = false end end
+end })
+local SpeedSlider = PredGroup:CreateSlider({ Name = "Bullet Speed", Range = {10, 10000}, Increment = 10, CurrentValue = 1500, Callback = function(v) Aimbot.BulletSpeed = v end })
+local DropSlider = PredGroup:CreateSlider({ Name = "Drop Factor", Range = {0, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) Aimbot.BulletDropAmount = v end })
 
-local BulletDropToggle = PredictionSettingsGroupbox:CreateToggle({
-    Name = "Bullet Drop", CurrentValue = false, Style = 2,
-    Callback = function(Value) Aimbot.BulletDrop = Value end
-}, "BulletDrop_Toggle")
 
-local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
-    Name = "Drop Amount", Icon = NebulaIcons:GetIcon('arrow-down-to-line', 'Lucide'), Range = {1, 200}, Increment = 1, CurrentValue = Aimbot.BulletDropAmount or 50,
-    Callback = function(Value) Aimbot.BulletDropAmount = Value end
-}, "BulletDrop_Slider")
+-- UI Elements: Combat
+local CombatGroup = CombatTab:CreateGroupbox({ Name = "Calibration Tools", Column = 1 })
+local WeaponGroup = CombatTab:CreateGroupbox({ Name = "Weapon Mods", Column = 2 })
 
+WeaponGroup:CreateToggle({ Name = "Triggerbot", Callback = function(v) Combat.Triggerbot = v end })
+WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end })
+WeaponGroup:CreateToggle({ Name = "No Recoil", Callback = function(v) Combat.NoRecoil = v end })
+
+local PlayerList = {"None"}
+for _, p in pairs(Players:GetPlayers()) do if p ~= Player then table.insert(PlayerList, p.Name) end end
+local TargetDropdown = CombatGroup:CreateDropdown({
+    Name = "Calibration Target", Options = PlayerList, CurrentOption = "None",
+    Callback = function(val) CalibrationTarget = Players:FindFirstChild(val[1] or val) end
+})
+Players.PlayerAdded:Connect(function(p)
+    if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetValues(PlayerList) end) end
+end)
+Players.PlayerRemoving:Connect(function(p)
+    for i, name in ipairs(PlayerList) do if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetValues(PlayerList) end); break end end
+end)
+
+CombatGroup:CreateButton({ Name = "Calibrate Speed", Callback = function()
+    if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
+    CalibrationLock = true
+    local char = CalibrationTarget.Character
+    local targetPart = char:FindFirstChild("HumanoidRootPart")
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
+    local initialHealth, startTime, distance = char.Humanoid.Health, os.clock(), (targetPart.Position - camera.CFrame.Position).Magnitude
+    mouse1press() task.wait(0.05) mouse1release()
+
+    task.spawn(function()
+        local success = false
+        while os.clock() - startTime < 2 do
+            if char.Humanoid.Health < initialHealth then
+                Aimbot.BulletSpeed = math.floor(distance / (os.clock() - startTime))
+                SpeedSlider:Set(Aimbot.BulletSpeed)
+                Starlight:Notification({ Title = "Success", Content = "Speed set to: " .. Aimbot.BulletSpeed, Duration = 3 })
+                success = true break
+            end
+            task.wait()
+        end
+        if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
+        CalibrationLock = false
+    end)
+end})
+
+CombatGroup:CreateButton({ Name = "Calibrate Drop", Callback = function()
+    if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
+    CalibrationLock = true
+    local char = CalibrationTarget.Character
+    local targetPart = char:FindFirstChild("HumanoidRootPart")
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
+    local initialHealth, startTime = char.Humanoid.Health, os.clock()
+    mouse1press() task.wait(0.05) mouse1release()
+
+    task.spawn(function()
+        while os.clock() - startTime < 2 do
+            if char.Humanoid.Health < initialHealth then
+                Aimbot.BulletDropAmount = math.floor((2 * 50) / ((os.clock() - startTime)^2))
+                DropSlider:Set(Aimbot.BulletDropAmount)
+                Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted.", Duration = 3 })
+                break
+            end
+            task.wait()
+        end
+        CalibrationLock = false
+    end)
+end})
+
+-- UI Elements: Visuals (Restored Inverse Friends)
+local ESPSetGroup = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 })
+ESPSetGroup:CreateToggle({ Name = "Enable ESP", Callback = function(v) Visuals.ESP = v if not v then espFolder:ClearAllChildren() end end })
+ESPSetGroup:CreateToggle({ Name = "Tracers", CurrentValue = true, Callback = function(v) Visuals.Tracers = v end })
+ESPSetGroup:CreateToggle({ Name = "Use Team Color", Callback = function(v) Visuals.UseTeamColor = v end })
+ESPSetGroup:CreateToggle({ Name = "Inverse Friends", Callback = function(v) Visuals.InverseFriends = v end })
+ESPSetGroup:CreateToggle({ Name = "Rainbow Mode", Callback = function(v)
+    Visuals.Rainbow = v
+    if v then RainbowConnection = RunService.RenderStepped:Connect(function() Visuals.CurrentColor = Color3.fromHSV(os.clock() % 5 / 5, 1, 1) end)
+    else if RainbowConnection then RainbowConnection:Disconnect() end Visuals.CurrentColor = Color3.new(1, 1, 1) end
+end })
+
+-- UI Elements: Config/Themes
+SettingsTab:BuildConfigGroupbox(1)
+local ThemeGroup = SettingsTab:CreateGroupbox({ Name = "Theme Manager", Column = 2 })
+ThemeGroup:CreateColorpicker({ Name = "UI Accent Color", DefaultColor = Color3.fromRGB(170, 85, 255), Callback = function(color) Starlight:SetThemeColor(color) end })
+
+-- UI Elements: Credits (Restored)
+local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 })
+local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 })
+local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 })
+
+CreditsGroupbox:CreateLabel({ Name = "Credits:", Content = "Script made by Sporer66846\nUI Library made by Nebula Softworks\nVersion 3.0" })
+DonateGroupbox:CreateButton({ Name = "Copy Bitcoin Wallet", Icon = NebulaIcons:GetIcon('bitcoin', 'Lucide'), Style = 1, Callback = function() setclipboard("bc1q54wdp3xrhmrpcqnlqf72rlmmjg7c83fj30n43u") end })
+DonateGroupbox:CreateButton({ Name = "Copy Etherium Wallet", Icon = NebulaIcons:GetIcon('gpu', 'Lucide'), Style = 1, Callback = function() setclipboard("0x75BbcC2aaEdef8d5205c0B6DFCa85c20C9aE608A") end })
+SocialsGroupbox:CreateButton({ Name = "Copy Discord Link", Icon = NebulaIcons:GetIcon('bot', 'Lucide'), Style = 1, Callback = function() setclipboard("https://discord.gg/CSzZPNwUWY") end })
+
+-- Cached Friends System
 local friendCache = {}
 local function isPlayerFriend(targetPlayer)
-    if friendCache[targetPlayer.UserId] ~= nil then
-        return friendCache[targetPlayer.UserId]
-    end
-
+    if friendCache[targetPlayer.UserId] ~= nil then return friendCache[targetPlayer.UserId] end
     friendCache[targetPlayer.UserId] = false
     task.spawn(function()
-        local success, result = pcall(function()
-            return Player:IsFriendsWith(targetPlayer.UserId)
-        end)
-        if success then
-            friendCache[targetPlayer.UserId] = result
-        end
+        local success, result = pcall(function() return Player:IsFriendsWith(targetPlayer.UserId) end)
+        if success then friendCache[targetPlayer.UserId] = result end
     end)
-    
     return friendCache[targetPlayer.UserId]
 end
 
-local function getColorForPlayer(player)
-    if Visuals.UseTeamColor and player.Team then
-        return player.TeamColor.Color
-    end
+-- Helper Functions
+local function IsVisible(part)
+    if not Aimbot.VisibleCheck then return true end
+    local char = Player.Character
+    if not char then return false end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, part.Parent}
+    local result = workspace:Raycast(camera.CFrame.Position, (part.Position - camera.CFrame.Position), params)
+    return result == nil
+end
 
-    local baseColor = Visuals.Rainbow and Visuals.CurrentColor or Color3.new(1, 1, 1)
-    if Visuals.InverseFriends and isPlayerFriend(player) then
+local function GetPlayerColor(p)
+    if Visuals.UseTeamColor and p.Team then return p.TeamColor.Color end
+    local baseColor = Visuals.CurrentColor
+    if Visuals.InverseFriends and isPlayerFriend(p) then
         local h, s, v = baseColor:ToHSV()
         return Color3.fromHSV((h + 0.5) % 1, s, v) 
-    else
-        return baseColor
     end
+    return baseColor
 end
 
-local function createESP(player)
-    if player == Player then return end 
-    if not player.Character then return end
-
-    if not espFolder:FindFirstChild(player.Name .. "_ESP") then
-        local espObject = Instance.new("Highlight")
-        espObject.Name = player.Name .. "_ESP"
-        espObject.Parent = espFolder
-        espObject.Adornee = player.Character
-        espObject.FillTransparency = 1
-        espObject.OutlineColor = getColorForPlayer(player)
-        espObject.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    else
-        espFolder[player.Name .. "_ESP"].Adornee = player.Character
-    end
-end
-
-local function addESP()
-    for _, player in pairs(Players:GetPlayers()) do createESP(player) end
-end
-
-Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function()
-        if Visuals.ESP then createESP(player) end
-    end)
-end)
-
-for _, player in pairs(Players:GetPlayers()) do
-    player.CharacterAdded:Connect(function()
-        if Visuals.ESP then createESP(player) end
-    end)
-end
-
-local ESPToggle = ESPSettingsGroupbox:CreateToggle({
-    Name = "Enabled", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Visuals.ESP = Value
-        if Value then addESP() else espFolder:ClearAllChildren() end
-    end
-}, "ESP_Toggle")
-
-local UseTeamColorToggle = ESPSettingsGroupbox:CreateToggle({
-    Name = "Use Team Color", CurrentValue = false, Style = 2,
-    Callback = function(Value) Visuals.UseTeamColor = Value end
-}, "UseTeamColor_Toggle")
-
-local TracersToggle = ESPSettingsGroupbox:CreateToggle({
-    Name = "Tracers", CurrentValue = false, Style = 2,
-    Callback = function(Value) Visuals.Tracers = Value end
-}, "Tracers_Toggle")
-
-local rainbowing = nil
-local RainbowToggle = ESPSettingsGroupbox:CreateToggle({
-    Name = "Rainbow", CurrentValue = false, Style = 2,
-    Callback = function(Value)
-        Visuals.Rainbow = Value
-        if Value then
-            local function doRainbow()
-                local time = os.clock()
-                local hue = (time * 0.2) % 1 
-                Visuals.CurrentColor = Color3.fromHSV(hue, 1, 1)
-            end
-            rainbowing = RunService.RenderStepped:Connect(doRainbow)
-        else
-            Visuals.CurrentColor = Color3.new(1, 1, 1)
-            if rainbowing then
-                rainbowing:Disconnect()
-                rainbowing = nil
+-- Combat Functions
+RunService.Heartbeat:Connect(function()
+    if Combat.Triggerbot then
+        local mouseLoc = UserInputService:GetMouseLocation()
+        local ray = camera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
+        local result = workspace:Raycast(ray.Origin, ray.Direction * 1000)
+        if result and result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
+            local hitPlayer = Players:GetPlayerFromCharacter(result.Instance.Parent)
+            if hitPlayer and hitPlayer ~= Player then
+                if Aimbot.TeamCheck and hitPlayer.Team == Player.Team then return end
+                task.wait(Combat.TriggerDelay)
+                mouse1click()
             end
         end
     end
-}, "Rainbow_Toggle")
-
-local InverseFriendsToggle = ESPSettingsGroupbox:CreateToggle({
-    Name = "Inverse Friends", CurrentValue = false, Style = 2,
-    Callback = function(Value) Visuals.InverseFriends = Value end
-}, "InverseFriends_Toggle")
-
--- [FIXED]: Optimized ESP Drawings Cache System
-local ESPDrawings = {}
-
-Players.PlayerRemoving:Connect(function(player)
-    if ESPDrawings[player] then
-        ESPDrawings[player].Tracer:Remove()
-        ESPDrawings[player].NameText:Remove()
-        ESPDrawings[player] = nil
-    end
 end)
 
-local function worldToScreen(pos)
-    local camera = workspace.CurrentCamera
-    local screenPos, onScreen = camera:WorldToViewportPoint(pos)
-    return Vector2.new(screenPos.X, screenPos.Y), onScreen
-end
-
+local LastCameraRotation = camera.CFrame
 RunService.RenderStepped:Connect(function()
-    local camera = workspace.CurrentCamera
+    if Combat.NoRecoil then
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then camera.CFrame = LastCameraRotation end
+        LastCameraRotation = camera.CFrame
+    else LastCameraRotation = camera.CFrame end
+end)
 
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= Player then
-            -- Initialize drawing cache for the player if they don't have it
-            if not ESPDrawings[player] then
-                ESPDrawings[player] = {
-                    Tracer = Drawing.new("Line"),
-                    NameText = Drawing.new("Text")
-                }
-            end
+local function UpdateVisualizer()
+    if not Aimbot.Visualizer then return end
+    local startPos = camera.CFrame.Position
+    local startVel = camera.CFrame.LookVector * Aimbot.BulletSpeed
+    local gravity = Vector3.new(0, -Aimbot.BulletDropAmount, 0)
+    for i = 1, 20 do
+        if not VisualizerLines[i] then VisualizerLines[i] = Drawing.new("Line"); VisualizerLines[i].Thickness = 1.5; VisualizerLines[i].Color = Color3.new(0, 1, 0) end
+        local t1, t2 = (i - 1) * 0.1, i * 0.1
+        local p1 = startPos + (startVel * t1) + (0.5 * gravity * t1^2)
+        local p2 = startPos + (startVel * t2) + (0.5 * gravity * t2^2)
+        local screenPos1, on1 = camera:WorldToViewportPoint(p1)
+        local screenPos2, on2 = camera:WorldToViewportPoint(p2)
+        if on1 and on2 then
+            VisualizerLines[i].From = Vector2.new(screenPos1.X, screenPos1.Y)
+            VisualizerLines[i].To = Vector2.new(screenPos2.X, screenPos2.Y)
+            VisualizerLines[i].Visible = true
+        else VisualizerLines[i].Visible = false end
+    end
+end
 
-            local tracer = ESPDrawings[player].Tracer
-            local nameText = ESPDrawings[player].NameText
+-- Main Loop
+RunService.RenderStepped:Connect(function(dt)
+    UpdateVisualizer()
+    if Main.WalkSpeedEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.WalkSpeed = Main.WalkSpeed end
+    if Main.JumpPowerEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.JumpPower = Main.JumpPower end
 
-            -- Assume invisible by default
-            tracer.Visible = false
-            nameText.Visible = false
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= Player then
+            if not ESPDrawings[p] then ESPDrawings[p] = { Tracer = Drawing.new("Line"), NameText = Drawing.new("Text") } end
+            local drawings = ESPDrawings[p]
+            drawings.Tracer.Visible = false
+            drawings.NameText.Visible = false
 
-            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                local char = player.Character
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local head = char:FindFirstChild("Head")
-                local humanoid = char:FindFirstChild("Humanoid")
-                
-                -- Ensure the player is actually alive
-                if humanoid and humanoid.Health > 0 then
-                    local colorToUse = getColorForPlayer(player)
-
-                    -- Update Highlight Outline Color
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") then
+                if p.Character.Humanoid.Health > 0 then
+                    local color = (Target == p) and Color3.new(1, 0, 0) or GetPlayerColor(p)
+                    local highlight = espFolder:FindFirstChild(p.Name .. "_ESP")
                     if Visuals.ESP then
-                        local espObj = espFolder:FindFirstChild(player.Name .. "_ESP")
-                        if espObj then
-                            espObj.OutlineColor = colorToUse
-                        end
-                    end
+                        if not highlight then highlight = Instance.new("Highlight", espFolder); highlight.Name = p.Name .. "_ESP"; highlight.FillTransparency = 1; highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop end
+                        highlight.Adornee = p.Character
+                        highlight.OutlineColor = color
+                    elseif highlight then highlight:Destroy() end
 
-                    -- Render Tracer
-                    if Visuals.Tracers and hrp then
-                        local screenPos, onScreen = worldToScreen(hrp.Position)
-                        if onScreen then
-                            tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
-                            tracer.To = screenPos
-                            tracer.Color = colorToUse
-                            tracer.Thickness = 1.5
-                            tracer.Transparency = 1
-                            tracer.Visible = true
+                    local screenPos, onScreen = camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+                    if onScreen then
+                        if Visuals.Tracers then
+                            drawings.Tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                            drawings.Tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                            drawings.Tracer.Color = color
+                            drawings.Tracer.Visible = true
                         end
-                    end
-
-                    -- Render Name ESP
-                    if Visuals.ESP and head then
-                        local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
-                        if onScreen then
-                            if isPlayerFriend(player) then
-                                nameText.Text = "(Friend) " .. player.Name
-                            else
-                                nameText.Text = player.Name
-                            end
-                            
-                            nameText.Position = namePos
-                            nameText.Size = 14
-                            nameText.Color = colorToUse
-                            nameText.Center = true
-                            nameText.Outline = true
-                            nameText.OutlineColor = Color3.new(0, 0, 0)
-                            nameText.Visible = true
+                        if Visuals.ESP then
+                            local head = p.Character:FindFirstChild("Head")
+                            local namePos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, 3, 0)) or screenPos
+                            drawings.NameText.Text = isPlayerFriend(p) and "(Friend) " .. p.Name or p.Name
+                            drawings.NameText.Position = Vector2.new(namePos.X, namePos.Y)
+                            drawings.NameText.Color = color
+                            drawings.NameText.Center = true
+                            drawings.NameText.Outline = true
+                            drawings.NameText.Visible = true
                         end
                     end
                 end
@@ -493,281 +392,87 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Builds the Config Groupbox inside the Settings tab
-SettingsTab:BuildConfigGroupbox(1) 
+-- Aimbot Logic (Restored Target Filtering)
+local function GetAimbotTarget()
+    local closest = nil
+    local bestValue = math.huge
+    local mouseLoc = UserInputService:GetMouseLocation()
 
-local CreditsLabel = CreditsGroupbox:CreateLabel({
-    Name = "Credits:", Content = [[Script made by Sporer66846
-    UI Library made by Nebula Softworks
-    Version 1.0]],
-}, "Creator_Label")
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") then
+            if p.Character.Humanoid.Health <= 0 then continue end
+            if Aimbot.TeamCheck and p.Team == Player.Team then continue end
 
-local CopyBitcoinButton = DonateGroupbox:CreateButton({
-    Name = "Copy Bitcoin Wallet", Icon = NebulaIcons:GetIcon('bitcoin', 'Lucide'), Style = 1,
-    Callback = function() setclipboard("bc1q54wdp3xrhmrpcqnlqf72rlmmjg7c83fj30n43u") end,
-}, "CopyBitcoin_Button")
+            local root = p.Character.HumanoidRootPart
+            local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+            local part = p.Character:FindFirstChild(targetPartName) or root
 
-local CopyEtheriumButton = DonateGroupbox:CreateButton({
-    Name = "Copy Etherium Wallet", Icon = NebulaIcons:GetIcon('gpu', 'Lucide'), Style = 1,
-    Callback = function() setclipboard("0x75BbcC2aaEdef8d5205c0B6DFCa85c20C9aE608A") end,
-}, "CopyEtherium_Button")
+            local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+            local distToMouse = (Vector2.new(mouseLoc.X, mouseLoc.Y) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
+            local distToPlayer = (root.Position - (Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") and Player.Character.HumanoidRootPart.Position or Vector3.zero)).Magnitude
 
-local CopyDiscordButton = SocialsGroupbox:CreateButton({
-    Name = "Copy Discord Link", Icon = NebulaIcons:GetIcon('bot', 'Lucide'), Style = 1,
-    Callback = function() setclipboard("https://discord.gg/CSzZPNwUWY") end,
-}, "CopyDiscord_Button")
-
-local function ReturnPlayers()
-    local PlayersTable = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        if not table.find(PlayersTable, player) then
-            table.insert(PlayersTable, player)
-        end
-    end
-    return PlayersTable
-end
-
-local function GetPlayerDistance(targetPlayer)
-    local targetCharacter = targetPlayer.Character
-    local targetHumanoidRootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-    local Character = Player.Character
-    local HumanoidRootPart = Character and Character:FindFirstChild("HumanoidRootPart")
-    
-    if not targetHumanoidRootPart or not HumanoidRootPart then return math.huge end
-    return (targetHumanoidRootPart.Position - HumanoidRootPart.Position).Magnitude
-end
-
-local function GetMouseDistanceToPlayer(player)
-    local camera = workspace.CurrentCamera
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return math.huge end
-
-    local screenPoint, onScreen = camera:WorldToScreenPoint(root.Position)
-    if screenPoint.Z <= 0 then return math.huge end
-
-    local dx = screenPoint.X - Mouse.X
-    local dy = screenPoint.Y - Mouse.Y
-    return math.sqrt(dx*dx + dy*dy)
-end
-
-local function GetClosestToMouse(playerList)
-    local closestPlayer = nil
-    local shortestDistance = Aimbot.FOV
-
-    for _, player in ipairs(playerList) do
-        if player ~= Player then
-            if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
-
-            local char = player.Character
-            local humanoid = char and char:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local dist2d = GetMouseDistanceToPlayer(player)
-                if dist2d < shortestDistance and GetPlayerDistance(player) <= Aimbot.Range then
-                    shortestDistance = dist2d
-                    closestPlayer = player
-                end
+            if onScreen and distToMouse <= Aimbot.FOV and distToPlayer <= Aimbot.Range and IsVisible(part) then
+                if Aimbot.Filtering == "ClosestToMouse" and distToMouse < bestValue then bestValue = distToMouse; closest = p
+                elseif Aimbot.Filtering == "ClosestToPlayer" and distToPlayer < bestValue then bestValue = distToPlayer; closest = p
+                elseif Aimbot.Filtering == "LowestHealth" and p.Character.Humanoid.Health < bestValue then bestValue = p.Character.Humanoid.Health; closest = p end
             end
         end
     end
-    return closestPlayer
+    return closest
 end
 
-local function GetClosestToPlayer(PlayersTable)
-    local closestPlayer = nil
-    local shortestDistance = Aimbot.Range
-    local Character = Player.Character
-    local HumanoidRootPart = Character and Character:FindFirstChild("HumanoidRootPart")
+local function StartAimbot()
+    if not Aimbot.Enabled then return end
+    Target = GetAimbotTarget()
+    if not Target then return end
 
-    if not HumanoidRootPart then return end
+    local switchInterval, lastSwitchTime, currentPart = 0.3, 0, nil
     
-    for _, player in ipairs(PlayersTable) do
-        if player ~= Player then
-            if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
-
-            local char = player.Character
-            local humanoid = char and char:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local dist = GetPlayerDistance(player)
-                    if dist < shortestDistance and GetMouseDistanceToPlayer(player) < Aimbot.FOV then
-                        closestPlayer = player
-                        shortestDistance = dist
-                    end
-                end
+    AimbotConnection = RunService.RenderStepped:Connect(function(dt)
+        if not Target or not Target.Character or Target.Character.Humanoid.Health <= 0 then StopAimbot() return end
+        
+        local root = Target.Character:FindFirstChild("HumanoidRootPart")
+        local pos
+        
+        -- Legit Randomizer Logic Restored
+        if Aimbot.TargetPart ~= "Legit" then
+            local p = Target.Character:FindFirstChild(Aimbot.TargetPart)
+            if not p then StopAimbot() return end
+            pos = p.Position
+        else
+            if not currentPart or os.clock() - lastSwitchTime >= switchInterval then
+                lastSwitchTime = os.clock()
+                local parts = {Target.Character:FindFirstChild("Head"), Target.Character:FindFirstChild("UpperTorso") or Target.Character:FindFirstChild("Torso"), root}
+                currentPart = parts[math.random(1, #parts)] or root
             end
+            pos = currentPart.Position
         end
-    end
-    return closestPlayer
-end
-
-local function GetLowestHealth(PlayersTable)
-    local lowestPlayer = nil
-    local lowestHealth = math.huge
-    local shortestDistance = Aimbot.Range
-
-    for _, player in ipairs(PlayersTable) do
-        if player ~= Player then
-            if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then continue end
-
-            local char = player.Character
-            local humanoid = char and char:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local dist = GetPlayerDistance(player)
-                if humanoid.Health < lowestHealth and dist < shortestDistance and GetMouseDistanceToPlayer(player) < Aimbot.FOV then
-                    lowestPlayer = player
-                    lowestHealth = humanoid.Health
-                end
-            end
+        
+        if Aimbot.Prediction and root then
+            local t = (pos - camera.CFrame.Position).Magnitude / Aimbot.BulletSpeed
+            pos = pos + (root.Velocity * t)
+            if Aimbot.BulletDrop then pos = pos + Vector3.new(0, 0.5 * Aimbot.BulletDropAmount * t^2, 0) end
         end
-    end
-    return lowestPlayer
+        
+        local alpha = 1 - math.pow(1 - Aimbot.Smoothness, dt * 60)
+        camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(camera.CFrame.Position, pos), math.clamp(alpha, 0, 1))
+    end)
 end
 
-local function lookAtPosition(camera, position, deltaTime)
-    local newCFrame = CFrame.lookAt(camera.CFrame.Position, position)
-    
-    local alpha = Aimbot.Smoothness
-    if alpha < 1 then
-        alpha = 1 - math.pow(1 - alpha, deltaTime * 60)
-        alpha = math.clamp(alpha, 0, 1) 
-    end
-    
-    camera.CFrame = camera.CFrame:Lerp(newCFrame, alpha)
-end
-
-local Aimbotting = nil
-local Target = nil
-
-local function aimbotKeyUp()
-    if Aimbotting ~= nil then
-        Aimbotting:Disconnect()
-        Aimbotting = nil
-    end
+function StopAimbot()
+    if AimbotConnection then AimbotConnection:Disconnect() AimbotConnection = nil end
     Target = nil
 end
 
-local function aimbotKeyDown()
-    if Aimbot.Enabled == false then return end
+UserInputService.InputBegan:Connect(function(i, gp)
+    if not gp and (i.UserInputType.Name == Aimbot.Keybind or i.KeyCode.Name == Aimbot.Keybind) then StartAimbot() end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType.Name == Aimbot.Keybind or i.KeyCode.Name == Aimbot.Keybind then StopAimbot() end
+end)
 
-    if Aimbotting then
-        Aimbotting:Disconnect()
-        Aimbotting = nil
-    end
+Players.PlayerRemoving:Connect(function(p)
+    if ESPDrawings[p] then ESPDrawings[p].Tracer:Remove(); ESPDrawings[p].NameText:Remove(); ESPDrawings[p] = nil end
+end)
 
-    local currentPlayerTable = ReturnPlayers()
-
-    if currentPlayerTable ~= nil and #currentPlayerTable > 0 then
-        if Aimbot.Filtering == AimbotFiltering.ClosestToMouse then
-            Target = GetClosestToMouse(currentPlayerTable)
-        elseif Aimbot.Filtering == AimbotFiltering.ClosestToPlayer then
-            Target = GetClosestToPlayer(currentPlayerTable)
-        elseif Aimbot.Filtering == AimbotFiltering.LowestHealth then
-            Target = GetLowestHealth(currentPlayerTable)
-        end
-    end
-
-    if Target == nil then return end
-
-    local character = Target.Character
-    if not character then return end
-
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-
-    local isR6 = (humanoid.RigType == Enum.HumanoidRigType.R6)
-    local mapping = {
-        Head               = "Head",
-        HumanoidRootPart   = "HumanoidRootPart",
-        Torso              = isR6 and "Torso"           or "UpperTorso",
-        ["Right Arm"]      = isR6 and "Right Arm"       or "RightUpperArm",
-        ["Left Arm"]       = isR6 and "Left Arm"        or "LeftUpperArm",
-        ["Right Leg"]      = isR6 and "Right Leg"       or "RightUpperLeg",
-        ["Left Leg"]       = isR6 and "Left Leg"        or "LeftUpperLeg",
-    }
-
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then
-        warn("No HumanoidRootPart! Can't fall back safely.")
-        return
-    end
-
-    local bodyParts = {}
-    for key, childName in pairs(mapping) do
-        if key == "HumanoidRootPart" then
-            bodyParts[key] = rootPart
-        else
-            bodyParts[key] = character:FindFirstChild(childName) or rootPart
-        end
-    end
-
-    local camera = workspace.CurrentCamera
-    local switchInterval  = 0.3
-    local lastSwitchTime  = 0
-    local currentPart     = nil
-
-    local function ManipulateCamera(deltaTime)
-        if not Target or not Target.Character or not Target.Character:FindFirstChild("Humanoid") or Target.Character.Humanoid.Health <= 0 then
-            aimbotKeyUp()
-            return
-        end
-
-        local position
-
-        if Aimbot.TargetPart ~= AimbotTargetPart.Legit then
-            position = bodyParts[Aimbot.TargetPart].Position
-            currentPart = nil
-            lastSwitchTime = time()
-        else
-            local now = time()
-            if not currentPart or now - lastSwitchTime >= switchInterval then
-                lastSwitchTime = now
-                local count = 0
-                for _, part in pairs(bodyParts) do
-                    count = count + 1
-                    if math.random(count) == 1 then
-                        currentPart = part
-                    end
-                end
-            end
-            position = currentPart.Position
-        end
-
-        if Aimbot.Prediction and Aimbot.BulletSpeed > 0 then
-            local distance = (position - camera.CFrame.Position).Magnitude
-            local bulletTravelTime = distance / Aimbot.BulletSpeed
-
-            if rootPart then
-                position = position + rootPart.Velocity * bulletTravelTime
-            end
-
-            if Aimbot.BulletDrop and Aimbot.BulletDropAmount > 0 then
-                local drop = 0.5 * Aimbot.BulletDropAmount * bulletTravelTime^2
-                position = Vector3.new(position.X, position.Y + drop, position.Z)
-            end
-        end
-
-        lookAtPosition(camera, position, deltaTime)
-    end
-
-    Aimbotting = RunService.RenderStepped:Connect(ManipulateCamera)
-end
-
-local function inputDown(input, gameprocessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		aimbotKeyDown()
-    end
-end
-
-local function inputUp(input, gameprocessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		aimbotKeyUp()
-    end
-end
-
-UserInputService.InputBegan:Connect(inputDown)
-UserInputService.InputEnded:Connect(inputUp)
-
--- Loads the autoloaded configuration
 Starlight:LoadAutoloadConfig()
