@@ -22,16 +22,13 @@ local Noclipping = nil
 local ClippingParts = {}
 local CalibrationLock = false
 
--- Prediction Dot Setup
-local PredictionDot = Instance.new("Part")
-PredictionDot.Shape = Enum.PartType.Ball
-PredictionDot.Size = Vector3.new(0.6, 0.6, 0.6)
-PredictionDot.Anchored = true
-PredictionDot.CanCollide = false
-PredictionDot.CanQuery = false
-PredictionDot.CanTouch = false
-PredictionDot.Material = Enum.Material.Neon
-PredictionDot.Color = Color3.new(1, 0, 0)
+-- Prediction Dot Setup (2D Drawing for reliability)
+local PredDotDrawing = Drawing.new("Circle")
+PredDotDrawing.Color = Color3.new(1, 0, 0)
+PredDotDrawing.Filled = true
+PredDotDrawing.Thickness = 1
+PredDotDrawing.Radius = 4
+PredDotDrawing.Visible = false
 
 -- Connection Storage for Unloading
 local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
@@ -279,7 +276,7 @@ PredictionSettingsGroupbox:CreateToggle({
     Name = "Show Prediction Dot", CurrentValue = false, Style = 2,
     Callback = function(v) 
         Aimbot.Visualizer = v 
-        if not v then PredictionDot.Parent = nil end
+        if not v then PredDotDrawing.Visible = false end
     end
 }, "Visualizer_Toggle")
 
@@ -366,7 +363,7 @@ local function GetCalibrationTargetModel()
     return nearestChar
 end
 
--- SPEED CALIBRATION (Manual Fire Only)
+-- SPEED CALIBRATION (Manual Fire & Anti UI-Click Debounce)
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -389,16 +386,16 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
         end
     end)
 
-    -- Wait for manual click
-    local shotFired = false
-    local inputConn
-    inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-        if not gp and input.UserInputType == Enum.UserInputType.MouseButton1 then
-            shotFired = true
-        end
-    end)
-
     task.spawn(function()
+        task.wait(0.5) -- Give the user half a second to let go of the UI click
+
+        local shotFired = false
+        local inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                shotFired = true
+            end
+        end)
+
         local waitTime = 0
         while not shotFired and waitTime < 5 do
             task.wait(0.1)
@@ -441,7 +438,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     end)
 end}, "CalibrateSpeed_Button")
 
--- DROP CALIBRATION (Manual Fire Only)
+-- DROP CALIBRATION (Manual Fire & Anti UI-Click Debounce)
 CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -464,16 +461,16 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
         end
     end)
 
-    -- Wait for manual click
-    local shotFired = false
-    local inputConn
-    inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-        if not gp and input.UserInputType == Enum.UserInputType.MouseButton1 then
-            shotFired = true
-        end
-    end)
-
     task.spawn(function()
+        task.wait(0.5) -- Give the user half a second to let go of the UI click
+
+        local shotFired = false
+        local inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                shotFired = true
+            end
+        end)
+
         local waitTime = 0
         while not shotFired and waitTime < 5 do
             task.wait(0.1)
@@ -583,8 +580,9 @@ local function UnloadScript()
         FOVCircle:Remove()
     end
     
-    if PredictionDot then
-        PredictionDot:Destroy()
+    if PredDotDrawing then
+        PredDotDrawing.Visible = false
+        PredDotDrawing:Remove()
     end
 
     for _, obj in pairs(ESPDrawings) do
@@ -804,17 +802,17 @@ local function GetAimbotTarget()
     return closestPlayer
 end
 
--- Single Dot Prediction Visualizer
+-- Screen Drawing Prediction Visualizer
 local function UpdatePredictionDot()
     if not Aimbot.Enabled or not Aimbot.Visualizer then 
-        PredictionDot.Parent = nil
+        PredDotDrawing.Visible = false
         return 
     end
 
     local bestTarget = Target or GetAimbotTarget()
     
     if not bestTarget or not bestTarget.Character or not bestTarget.Character:FindFirstChild("HumanoidRootPart") then
-        PredictionDot.Parent = nil
+        PredDotDrawing.Visible = false
         return
     end
     
@@ -834,8 +832,13 @@ local function UpdatePredictionDot()
         end
     end
     
-    PredictionDot.Position = position
-    PredictionDot.Parent = workspace.CurrentCamera
+    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(position)
+    if onScreen then
+        PredDotDrawing.Position = Vector2.new(screenPos.X, screenPos.Y)
+        PredDotDrawing.Visible = true
+    else
+        PredDotDrawing.Visible = false
+    end
 end
 
 
