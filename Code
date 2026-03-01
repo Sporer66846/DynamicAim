@@ -313,12 +313,12 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Calibration Target Helper
+-- Calibration Helper
 local function GetCalibrationTarget()
     local function isValidCalibTarget(p)
         if p == Player then return false end
         if not p.Character or not p.Character:FindFirstChild("Humanoid") or p.Character.Humanoid.Health <= 0 then return false end
-        if Player.Team and p.Team and Player.Team == p.Team then return false end
+        if Aimbot.TeamCheck and Player.Team and p.Team and Player.Team == p.Team then return false end
         return true
     end
 
@@ -365,18 +365,26 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
-    workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
     
+    -- Ensure camera focuses correctly to allow for games that register crosshair position
+    local aimConn = RunService.RenderStepped:Connect(function()
+        workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
+    end)
+    task.wait(0.1)
+
     local initialHealth = char.Humanoid.Health
     local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
     
-    mouse1click()
+    mouse1press()
+    task.wait(0.05)
+    mouse1release()
     local startTime = os.clock()
 
     task.spawn(function()
         local success = false
         while os.clock() - startTime < 3 do
-            if char.Humanoid.Health < initialHealth then
+            -- Use -0.1 to account for tiny floating point health regen
+            if char.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
                     Aimbot.BulletSpeed = math.floor(distance / t)
@@ -388,6 +396,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
             task.wait()
         end
         if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
+        if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
     end)
 end}, "CalibrateSpeed_Button")
@@ -410,27 +419,36 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
     local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
-    workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
     
+    local aimConn = RunService.RenderStepped:Connect(function()
+        workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
+    end)
+    task.wait(0.1)
+
     local initialHealth = char.Humanoid.Health
-    mouse1click()
+    mouse1press()
+    task.wait(0.05)
+    mouse1release()
     local startTime = os.clock()
 
     task.spawn(function()
         local success = false
         while os.clock() - startTime < 3 do
-            if char.Humanoid.Health < initialHealth then
+            if char.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
-                    Aimbot.BulletDropAmount = math.floor((2 * 50) / (t^2))
+                    -- Generates an empirical drop value based on standard gravity scaling
+                    local estimatedDrop = math.floor(196.2 * (t * 2))
+                    Aimbot.BulletDropAmount = math.clamp(estimatedDrop, 0, 500)
                     BulletDropSlider:Set(Aimbot.BulletDropAmount)
-                    Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted.", Duration = 3 })
+                    Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted: " .. Aimbot.BulletDropAmount, Duration = 3 })
                 end
                 success = true break
             end
             task.wait()
         end
         if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
+        if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
     end)
 end}, "CalibrateDrop_Button")
@@ -600,18 +618,36 @@ local function IsVisible(part)
 end
 
 
--- Combat Background Loops
+-- Optimized Combat Background Loops
+local triggerbotDebounce = false
 combatHeartbeat = RunService.Heartbeat:Connect(function()
-    if Combat.Triggerbot then
+    if Combat.Triggerbot and not triggerbotDebounce then
         local mouseLoc = UserInputService:GetMouseLocation()
         local ray = workspace.CurrentCamera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
-        local result = workspace:Raycast(ray.Origin, ray.Direction * 1000)
-        if result and result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
-            local hitPlayer = Players:GetPlayerFromCharacter(result.Instance.Parent)
-            if hitPlayer and hitPlayer ~= Player then
-                if Aimbot.TeamCheck and hitPlayer.Team == Player.Team then return end
-                task.wait(Combat.TriggerDelay)
-                mouse1click()
+        
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        if Player.Character then params.FilterDescendantsInstances = {Player.Character} end
+
+        local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+        
+        if result and result.Instance then
+            local model = result.Instance:FindFirstAncestorOfClass("Model")
+            if model and model:FindFirstChild("Humanoid") and model.Humanoid.Health > 0 then
+                local hitPlayer = Players:GetPlayerFromCharacter(model)
+                if hitPlayer and hitPlayer ~= Player then
+                    if Aimbot.TeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
+                    
+                    triggerbotDebounce = true
+                    task.spawn(function()
+                        task.wait(Combat.TriggerDelay)
+                        mouse1press()
+                        task.wait(0.05)
+                        mouse1release()
+                        task.wait(0.05) 
+                        triggerbotDebounce = false
+                    end)
+                end
             end
         end
     end
