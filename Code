@@ -14,7 +14,7 @@ espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 
 -- Logic Variables
 local ESPDrawings = {}
-local VisualizerLines = {}
+local VisualizerParts = {}
 local Target = nil
 local CalibrationTarget = nil
 local Aimbotting = nil
@@ -269,7 +269,9 @@ PredictionSettingsGroupbox:CreateToggle({
     Name = "Show Projectile Path", CurrentValue = false, Style = 2,
     Callback = function(v) 
         Aimbot.Visualizer = v 
-        if not v then for _, l in pairs(VisualizerLines) do l.Visible = false end end
+        if not v then 
+            for _, p in pairs(VisualizerParts) do p.Parent = nil end 
+        end
     end
 }, "Visualizer_Toggle")
 
@@ -313,7 +315,7 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Calibration Helper
+-- Calibration Target Helper
 local function GetCalibrationTarget()
     local function isValidCalibTarget(p)
         if p == Player then return false end
@@ -328,16 +330,19 @@ local function GetCalibrationTarget()
 
     local nearest = nil
     local minDist = math.huge
-    local localRoot = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    local mouseLoc = UserInputService:GetMouseLocation()
 
-    if localRoot then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if isValidCalibTarget(p) then
-                local root = p.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local d = (root.Position - localRoot.Position).Magnitude
-                    if d < minDist then
-                        minDist = d
+    for _, p in ipairs(Players:GetPlayers()) do
+        if isValidCalibTarget(p) then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
+                if onScreen and screenPoint.Z > 0 then
+                    local dx = screenPoint.X - mouseLoc.X
+                    local dy = screenPoint.Y - mouseLoc.Y
+                    local dist = math.sqrt(dx*dx + dy*dy)
+                    if dist < minDist then
+                        minDist = dist
                         nearest = p
                     end
                 end
@@ -366,7 +371,6 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
     
-    -- Ensure camera focuses correctly to allow for games that register crosshair position
     local aimConn = RunService.RenderStepped:Connect(function()
         workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
     end)
@@ -383,7 +387,6 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     task.spawn(function()
         local success = false
         while os.clock() - startTime < 3 do
-            -- Use -0.1 to account for tiny floating point health regen
             if char.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
@@ -437,7 +440,6 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
             if char.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
-                    -- Generates an empirical drop value based on standard gravity scaling
                     local estimatedDrop = math.floor(196.2 * (t * 2))
                     Aimbot.BulletDropAmount = math.clamp(estimatedDrop, 0, 500)
                     BulletDropSlider:Set(Aimbot.BulletDropAmount)
@@ -520,10 +522,10 @@ local function UnloadScript()
         FOVCircle:Remove()
     end
 
-    for _, l in pairs(VisualizerLines) do
-        l.Visible = false
-        l:Remove()
+    for _, p in pairs(VisualizerParts) do
+        p:Destroy()
     end
+    VisualizerParts = {}
 
     for _, obj in pairs(ESPDrawings) do
         if obj.Tracer then obj.Tracer.Visible = false obj.Tracer:Remove() end
@@ -665,25 +667,46 @@ noRecoilRender = RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- 3D Projectile Visualizer
 local function UpdateVisualizer()
-    if not Aimbot.Visualizer then return end
+    if not Aimbot.Visualizer then 
+        for _, part in pairs(VisualizerParts) do
+            part.Parent = nil
+        end
+        return 
+    end
+    
     local startPos = workspace.CurrentCamera.CFrame.Position
     local startVel = workspace.CurrentCamera.CFrame.LookVector * Aimbot.BulletSpeed
     local gravity = Vector3.new(0, -Aimbot.BulletDropAmount, 0)
+    
     for i = 1, 20 do
-        if not VisualizerLines[i] then 
-            VisualizerLines[i] = Drawing.new("Line"); VisualizerLines[i].Thickness = 1.5; VisualizerLines[i].Color = Color3.new(0, 1, 0) 
+        local part = VisualizerParts[i]
+        if not part then 
+            part = Instance.new("Part")
+            part.Anchored = true
+            part.CanCollide = false
+            part.CanQuery = false
+            part.CanTouch = false
+            part.Material = Enum.Material.Neon
+            part.Color = Color3.new(0, 1, 0)
+            part.Transparency = 0.5
+            VisualizerParts[i] = part
         end
-        local t1, t2 = (i - 1) * 0.1, i * 0.1
+        
+        local t1 = (i - 1) * 0.1
+        local t2 = i * 0.1
         local p1 = startPos + (startVel * t1) + (0.5 * gravity * t1^2)
         local p2 = startPos + (startVel * t2) + (0.5 * gravity * t2^2)
-        local screenPos1, on1 = workspace.CurrentCamera:WorldToViewportPoint(p1)
-        local screenPos2, on2 = workspace.CurrentCamera:WorldToViewportPoint(p2)
-        if on1 and on2 then
-            VisualizerLines[i].From = Vector2.new(screenPos1.X, screenPos1.Y)
-            VisualizerLines[i].To = Vector2.new(screenPos2.X, screenPos2.Y)
-            VisualizerLines[i].Visible = true
-        else VisualizerLines[i].Visible = false end
+        
+        local dist = (p2 - p1).Magnitude
+        if dist > 0.001 then
+            part.Size = Vector3.new(0.05, 0.05, dist)
+            part.CFrame = CFrame.lookAt(p1 + (p2 - p1)/2, p2)
+            part.Parent = workspace.CurrentCamera
+        else
+            part.Parent = nil
+        end
     end
 end
 
