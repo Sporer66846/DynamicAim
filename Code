@@ -323,52 +323,53 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Target Helper Validation
-local function ValidTargetCheck(player)
-    if player == Player then return false end
-    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
-    local char = player.Character
-    if not char then return false end
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    
-    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local part = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
-    if not part then return false end
-    
-    return true
-end
-
--- Calibration Helper
-local function GetCalibrationTarget()
-    if CalibrationTarget and ValidTargetCheck(CalibrationTarget) then
-        return CalibrationTarget
+-- Calibration Target Helper (Supports NPCs)
+local function GetCalibrationTargetModel()
+    -- 1. Check specific manually selected player first
+    if CalibrationTarget and CalibrationTarget ~= Player then
+        local char = CalibrationTarget.Character
+        if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+            if not (Aimbot.TeamCheck and Player.Team and CalibrationTarget.Team and Player.Team == CalibrationTarget.Team) then
+                return char
+            end
+        end
     end
 
-    local nearest = nil
+    -- 2. Fallback: Find closest valid Humanoid (Players & NPCs) to the mouse
+    local nearestChar = nil
     local minDist = math.huge
     local mouseLoc = UserInputService:GetMouseLocation()
 
-    for _, p in ipairs(Players:GetPlayers()) do
-        if ValidTargetCheck(p) then
-            local root = p.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
-                if onScreen and screenPoint.Z > 0 then
-                    local dx = screenPoint.X - mouseLoc.X
-                    local dy = screenPoint.Y - mouseLoc.Y
-                    local dist = math.sqrt(dx*dx + dy*dy)
-                    if dist < minDist then
-                        minDist = dist
-                        nearest = p
+    for _, hum in ipairs(workspace:GetDescendants()) do
+        if hum:IsA("Humanoid") and hum.Health > 0 then
+            local char = hum.Parent
+            if char and char:IsA("Model") and char ~= Player.Character then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    -- Check if it belongs to a player for team check logic
+                    local targetPlayer = Players:GetPlayerFromCharacter(char)
+                    if targetPlayer and Aimbot.TeamCheck and Player.Team and targetPlayer.Team and targetPlayer.Team == Player.Team then
+                        continue
+                    end
+
+                    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
+                    if onScreen and screenPoint.Z > 0 then
+                        local dx = screenPoint.X - mouseLoc.X
+                        local dy = screenPoint.Y - mouseLoc.Y
+                        local dist = math.sqrt(dx*dx + dy*dy)
+                        if dist < minDist then
+                            minDist = dist
+                            nearestChar = char
+                        end
                     end
                 end
             end
         end
     end
-    return nearest
+    return nearestChar
 end
 
+-- SPEED CALIBRATION (Manual Fire & NPC Support)
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -377,50 +378,78 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
         return
     end
 
-    local targetToUse = GetCalibrationTarget()
-    if not targetToUse then
+    local targetChar = GetCalibrationTargetModel()
+    if not targetChar then
         Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
         return
     end
 
     CalibrationLock = true
-    local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
+    local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    local aimConn = RunService.RenderStepped:Connect(function()
-        workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-    end)
-    task.wait(0.1)
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually.", Duration = 4 })
 
-    local initialHealth = char.Humanoid.Health
-    local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
-    
-    mouse1press()
-    task.wait(0.05)
-    mouse1release()
-    local startTime = os.clock()
+    -- Lock Camera
+    local aimConn = RunService.RenderStepped:Connect(function()
+        if targetPart then
+            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
+        end
+    end)
+
+    -- Detect Manual Shot
+    local shotFired = false
+    local inputConn
+    inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+        if not gp and input.UserInputType == Enum.UserInputType.MouseButton1 then
+            shotFired = true
+        end
+    end)
 
     task.spawn(function()
+        local waitTime = 0
+        while not shotFired and waitTime < 5 do
+            task.wait(0.1)
+            waitTime = waitTime + 0.1
+        end
+        
+        inputConn:Disconnect()
+
+        if not shotFired then
+            Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
+            if aimConn then aimConn:Disconnect() end
+            CalibrationLock = false
+            return
+        end
+
+        local initialHealth = targetChar.Humanoid.Health
+        local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
+        local startTime = os.clock()
         local success = false
-        while os.clock() - startTime < 3 do
-            if char.Humanoid.Health < initialHealth - 0.1 then
+
+        while os.clock() - startTime < 1 do
+            if targetChar.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
                     Aimbot.BulletSpeed = math.floor(distance / t)
                     BulletSpeedSlider:Set(Aimbot.BulletSpeed)
                     Starlight:Notification({ Title = "Success", Content = "Speed set to: " .. Aimbot.BulletSpeed, Duration = 3 })
                 end
-                success = true break
+                success = true 
+                break
             end
             task.wait()
         end
-        if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
+        
+        if not success then 
+            Starlight:Notification({ Title = "Error", Content = "No hit detected within 1 second.", Duration = 3 }) 
+        end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
     end)
 end}, "CalibrateSpeed_Button")
 
+-- DROP CALIBRATION (Manual Fire & NPC Support)
 CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -429,32 +458,56 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
         return
     end
 
-    local targetToUse = GetCalibrationTarget()
-    if not targetToUse then
+    local targetChar = GetCalibrationTargetModel()
+    if not targetChar then
         Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
         return
     end
 
     CalibrationLock = true
-    local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
+    local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    local aimConn = RunService.RenderStepped:Connect(function()
-        workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-    end)
-    task.wait(0.1)
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually.", Duration = 4 })
 
-    local initialHealth = char.Humanoid.Health
-    mouse1press()
-    task.wait(0.05)
-    mouse1release()
-    local startTime = os.clock()
+    -- Lock Camera
+    local aimConn = RunService.RenderStepped:Connect(function()
+        if targetPart then
+            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
+        end
+    end)
+
+    -- Detect Manual Shot
+    local shotFired = false
+    local inputConn
+    inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+        if not gp and input.UserInputType == Enum.UserInputType.MouseButton1 then
+            shotFired = true
+        end
+    end)
 
     task.spawn(function()
+        local waitTime = 0
+        while not shotFired and waitTime < 5 do
+            task.wait(0.1)
+            waitTime = waitTime + 0.1
+        end
+        
+        inputConn:Disconnect()
+
+        if not shotFired then
+            Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
+            if aimConn then aimConn:Disconnect() end
+            CalibrationLock = false
+            return
+        end
+
+        local initialHealth = targetChar.Humanoid.Health
+        local startTime = os.clock()
         local success = false
-        while os.clock() - startTime < 3 do
-            if char.Humanoid.Health < initialHealth - 0.1 then
+
+        while os.clock() - startTime < 1 do
+            if targetChar.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
                     local estimatedDrop = math.floor(196.2 * (t * 2))
@@ -462,11 +515,15 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
                     BulletDropSlider:Set(Aimbot.BulletDropAmount)
                     Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted: " .. Aimbot.BulletDropAmount, Duration = 3 })
                 end
-                success = true break
+                success = true
+                break
             end
             task.wait()
         end
-        if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
+        
+        if not success then 
+            Starlight:Notification({ Title = "Error", Content = "No hit detected within 1 second.", Duration = 3 }) 
+        end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
     end)
