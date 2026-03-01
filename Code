@@ -377,7 +377,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -387,22 +387,22 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     end)
 
     task.spawn(function()
-        task.wait(0.5) -- Give the user half a second to let go of the UI click
-
-        local shotFired = false
-        local inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                shotFired = true
-            end
-        end)
-
-        local waitTime = 0
-        while not shotFired and waitTime < 5 do
-            task.wait(0.1)
-            waitTime = waitTime + 0.1
+        -- Step 1: Wait until user fully releases the mouse button from clicking the UI
+        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            task.wait()
         end
-        
-        inputConn:Disconnect()
+
+        -- Step 2: Wait for the user to shoot (press M1)
+        local shotFired = false
+        local waitTime = 0
+        while waitTime < 5 do
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                shotFired = true
+                break
+            end
+            task.wait(0.05)
+            waitTime = waitTime + 0.05
+        end
 
         if not shotFired then
             Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
@@ -411,12 +411,13 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
             return
         end
 
+        -- Step 3: Wait for Damage Registration
         local initialHealth = targetChar.Humanoid.Health
         local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
         local startTime = os.clock()
         local success = false
 
-        while os.clock() - startTime < 1 do
+        while os.clock() - startTime < 3 do -- Wait up to 3 seconds for bullet travel/hit
             if targetChar.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
@@ -431,7 +432,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
         end
         
         if not success then 
-            Starlight:Notification({ Title = "Error", Content = "No hit detected within 1 second.", Duration = 3 }) 
+            Starlight:Notification({ Title = "Error", Content = "No hit detected. Target didn't take damage.", Duration = 3 }) 
         end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
@@ -452,7 +453,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -462,22 +463,22 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
     end)
 
     task.spawn(function()
-        task.wait(0.5) -- Give the user half a second to let go of the UI click
-
-        local shotFired = false
-        local inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                shotFired = true
-            end
-        end)
-
-        local waitTime = 0
-        while not shotFired and waitTime < 5 do
-            task.wait(0.1)
-            waitTime = waitTime + 0.1
+        -- Step 1: Wait until user fully releases the mouse button from clicking the UI
+        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            task.wait()
         end
-        
-        inputConn:Disconnect()
+
+        -- Step 2: Wait for the user to shoot (press M1)
+        local shotFired = false
+        local waitTime = 0
+        while waitTime < 5 do
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                shotFired = true
+                break
+            end
+            task.wait(0.05)
+            waitTime = waitTime + 0.05
+        end
 
         if not shotFired then
             Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
@@ -486,11 +487,12 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
             return
         end
 
+        -- Step 3: Wait for Damage Registration
         local initialHealth = targetChar.Humanoid.Health
         local startTime = os.clock()
         local success = false
 
-        while os.clock() - startTime < 1 do
+        while os.clock() - startTime < 3 do -- Wait up to 3 seconds for bullet travel/hit
             if targetChar.Humanoid.Health < initialHealth - 0.1 then
                 local t = os.clock() - startTime
                 if t > 0 then
@@ -506,7 +508,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
         end
         
         if not success then 
-            Starlight:Notification({ Title = "Error", Content = "No hit detected within 1 second.", Duration = 3 }) 
+            Starlight:Notification({ Title = "Error", Content = "No hit detected. Target didn't take damage.", Duration = 3 }) 
         end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
@@ -802,9 +804,9 @@ local function GetAimbotTarget()
     return closestPlayer
 end
 
--- Screen Drawing Prediction Visualizer
+-- Screen Drawing Prediction Visualizer (Works independently from Aimbot.Enabled)
 local function UpdatePredictionDot()
-    if not Aimbot.Enabled or not Aimbot.Visualizer then 
+    if not Aimbot.Visualizer then 
         PredDotDrawing.Visible = false
         return 
     end
