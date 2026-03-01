@@ -496,24 +496,31 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- NO RECOIL LOGIC (Fixed WASD Movement & Aimbot Synergy)
+-- NO RECOIL LOGIC (Allows Camera Aiming & WASD Movement)
 local LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
 noRecoilRender = RunService.RenderStepped:Connect(function()
     if Combat.NoRecoil then
-        -- If the Aimbot is actively tracking someone, bypass No Recoil rotation lock
-        if Aimbotting ~= nil then
-            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-            return
+        -- Temporarily disable No Recoil if the Aimbot is actively tracking
+        if Aimbotting ~= nil then 
+            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
+            return 
         end
 
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
-            -- Lock rotation to prevent recoil kick, but apply it to the CURRENT position to allow WASD movement
-            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation 
-        else 
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            local delta = UserInputService:GetMouseDelta()
+            
+            -- If the user physically moved the mouse, allow the movement to apply
+            if delta.Magnitude > 0 then
+                LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+            else
+                -- If the mouse is still, lock the rotation to completely negate game recoil
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation
+            end
+        else
             LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
         end
-    else 
-        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
+    else
+        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
     end
 end)
 
