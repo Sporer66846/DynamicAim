@@ -47,8 +47,8 @@ local AimbotFiltering = {
 }
 
 local Aimbot = {
-    Enabled = false, TeamCheck = false, VisibleCheck = true,
-    TargetPart = AimbotTargetPart.Head, FOVCircle = true, FOV = 150,
+    Enabled = false, TeamCheck = false, VisibleCheck = false,
+    TargetPart = AimbotTargetPart.Head, FOVCircle = false, FOV = 150,
     Range = 1000, Smoothness = 0.5, Filtering = AimbotFiltering.ClosestToMouse,
     Prediction = false, BulletSpeed = 1500, BulletDrop = false, BulletDropAmount = 50,
     Keybind = "MouseButton2", Visualizer = false
@@ -60,7 +60,7 @@ local Combat = {
 
 local Visuals = {
     ESP = false, ESPColor = Color3.fromRGB(255, 255, 255), ESPHighlights = true,
-    Tracers = true, TracerColor = Color3.fromRGB(255, 255, 255),
+    Tracers = false, TracerColor = Color3.fromRGB(255, 255, 255),
     Rainbow = false, InverseFriends = false, UseTeamColor = false,
     CurrentColor = Color3.new(1, 1, 1)
 }
@@ -193,7 +193,7 @@ AimbotSettingsGroupbox:CreateToggle({
 }, "Aimbot_TeamCheck_Toggle")
 
 AimbotSettingsGroupbox:CreateToggle({
-    Name = "Visible Check", CurrentValue = true, Style = 2,
+    Name = "Visible Check", CurrentValue = false, Style = 2,
     Callback = function(v) Aimbot.VisibleCheck = v end
 }, "Aimbot_VisibleCheck_Toggle")
 
@@ -226,7 +226,7 @@ FOVCircle.Thickness = 1
 FOVCircle.NumSides = 90
 
 AimbotSettingsGroupbox:CreateToggle({
-    Name = "FOV Circle", CurrentValue = true, Style = 2,
+    Name = "FOV Circle", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Aimbot.FOVCircle = Value
         if Value then
@@ -313,22 +313,76 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
+-- Calibration Target Helper
+local function GetCalibrationTarget()
+    local function isValidCalibTarget(p)
+        if p == Player then return false end
+        if not p.Character or not p.Character:FindFirstChild("Humanoid") or p.Character.Humanoid.Health <= 0 then return false end
+        if Player.Team and p.Team and Player.Team == p.Team then return false end
+        return true
+    end
+
+    if CalibrationTarget and isValidCalibTarget(CalibrationTarget) then
+        return CalibrationTarget
+    end
+
+    local nearest = nil
+    local minDist = math.huge
+    local localRoot = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+
+    if localRoot then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if isValidCalibTarget(p) then
+                local root = p.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local d = (root.Position - localRoot.Position).Magnitude
+                    if d < minDist then
+                        minDist = d
+                        nearest = p
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
-    if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
+    if CalibrationLock then return end
+    
+    if not Player.Character or not Player.Character:FindFirstChildOfClass("Tool") then
+        Starlight:Notification({ Title = "Error", Content = "You must hold a tool (gun) to calibrate.", Duration = 3 })
+        return
+    end
+
+    local targetToUse = GetCalibrationTarget()
+    if not targetToUse then
+        Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
+        return
+    end
+
     CalibrationLock = true
-    local char = CalibrationTarget.Character
+    local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
     workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-    local initialHealth, startTime, distance = char.Humanoid.Health, os.clock(), (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
+    
+    local initialHealth = char.Humanoid.Health
+    local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
+    
     mouse1click()
+    local startTime = os.clock()
+
     task.spawn(function()
         local success = false
-        while os.clock() - startTime < 2 do
+        while os.clock() - startTime < 3 do
             if char.Humanoid.Health < initialHealth then
-                Aimbot.BulletSpeed = math.floor(distance / (os.clock() - startTime))
-                BulletSpeedSlider:Set(Aimbot.BulletSpeed)
-                Starlight:Notification({ Title = "Success", Content = "Speed set to: " .. Aimbot.BulletSpeed, Duration = 3 })
+                local t = os.clock() - startTime
+                if t > 0 then
+                    Aimbot.BulletSpeed = math.floor(distance / t)
+                    BulletSpeedSlider:Set(Aimbot.BulletSpeed)
+                    Starlight:Notification({ Title = "Success", Content = "Speed set to: " .. Aimbot.BulletSpeed, Duration = 3 })
+                end
                 success = true break
             end
             task.wait()
@@ -339,16 +393,32 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
 end}, "CalibrateSpeed_Button")
 
 CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
-    if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
+    if CalibrationLock then return end
+    
+    if not Player.Character or not Player.Character:FindFirstChildOfClass("Tool") then
+        Starlight:Notification({ Title = "Error", Content = "You must hold a tool (gun) to calibrate.", Duration = 3 })
+        return
+    end
+
+    local targetToUse = GetCalibrationTarget()
+    if not targetToUse then
+        Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
+        return
+    end
+
     CalibrationLock = true
-    local char = CalibrationTarget.Character
+    local char = targetToUse.Character
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
     workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-    local initialHealth, startTime = char.Humanoid.Health, os.clock()
+    
+    local initialHealth = char.Humanoid.Health
     mouse1click()
+    local startTime = os.clock()
+
     task.spawn(function()
-        while os.clock() - startTime < 2 do
+        local success = false
+        while os.clock() - startTime < 3 do
             if char.Humanoid.Health < initialHealth then
                 local t = os.clock() - startTime
                 if t > 0 then
@@ -356,10 +426,11 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
                     BulletDropSlider:Set(Aimbot.BulletDropAmount)
                     Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted.", Duration = 3 })
                 end
-                break
+                success = true break
             end
             task.wait()
         end
+        if not success then Starlight:Notification({ Title = "Error", Content = "No hit detected.", Duration = 3 }) end
         CalibrationLock = false
     end)
 end}, "CalibrateDrop_Button")
@@ -375,7 +446,7 @@ ESPSettingsGroupbox:CreateToggle({
 }, "ESP_Toggle")
 
 ESPSettingsGroupbox:CreateToggle({
-    Name = "Tracers", CurrentValue = true, Style = 2,
+    Name = "Tracers", CurrentValue = false, Style = 2,
     Callback = function(Value) Visuals.Tracers = Value end
 }, "Tracers_Toggle")
 
@@ -412,24 +483,20 @@ SettingsTab:BuildThemeGroupbox(2)
 local SettingsUtilityGroupbox = SettingsTab:CreateGroupbox({ Name = "Utility", Column = 1 }, "Utility_Groupbox")
 
 local function UnloadScript()
-    -- 1. Restore Character and Environment
     if Player.Character and Player.Character:FindFirstChild("Humanoid") then
         Player.Character.Humanoid.WalkSpeed = 16
         Player.Character.Humanoid.JumpPower = 50
     end
     workspace.Gravity = 196.2
 
-    -- 2. Restore Collisions
     if Noclipping then Noclipping:Disconnect() Noclipping = nil end
     for _, part in pairs(ClippingParts) do
         if part and part.Parent then part.CanCollide = true end
     end
     ClippingParts = {}
 
-    -- 3. Clear Highlights
     if espFolder then espFolder:Destroy() end
 
-    -- 4. Destroy Drawing Objects
     if FOVCircle then
         FOVCircle.Visible = false
         FOVCircle:Remove()
@@ -445,7 +512,6 @@ local function UnloadScript()
         if obj.NameText then obj.NameText.Visible = false obj.NameText:Remove() end
     end
 
-    -- 5. Disconnect all background loops
     if Aimbotting then Aimbotting:Disconnect() end
     if rainbowing then rainbowing:Disconnect() end
     if fovHeartbeat then fovHeartbeat:Disconnect() end
@@ -457,7 +523,6 @@ local function UnloadScript()
     if playerAddedConn then playerAddedConn:Disconnect() end
     if playerRemovingConn then playerRemovingConn:Disconnect() end
 
-    -- 6. Destroy Starlight UI
     pcall(function() Window:Destroy() end)
     pcall(function() Starlight:Unload() end)
 end
@@ -533,6 +598,7 @@ local function IsVisible(part)
     end
     return true
 end
+
 
 -- Combat Background Loops
 combatHeartbeat = RunService.Heartbeat:Connect(function()
@@ -687,7 +753,7 @@ end
 
 local function ValidTargetCheck(player)
     if player == Player then return false end
-    if Aimbot.TeamCheck and player.Team == Player.Team then return false end
+    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
     local char = player.Character
     if not char then return false end
     local hum = char:FindFirstChild("Humanoid")
