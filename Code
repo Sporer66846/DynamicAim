@@ -10,7 +10,7 @@ local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/neb
 local Player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local espFolder = Instance.new("Folder")
-espFolder.Parent = gethui()
+espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 
 -- Logic Variables
 local ESPDrawings = {}
@@ -87,7 +87,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- UI Elements: Home (Restored JumpPower and NoClip)
+-- UI Elements: Home
 local CharGroup = HomeTab:CreateGroupbox({ Name = "Character", Column = 1 })
 CharGroup:CreateToggle({ Name = "WalkSpeed Enabled", Callback = function(v) 
     Main.WalkSpeedEnabled = v 
@@ -129,7 +129,7 @@ EnvGroup:CreateToggle({ Name = "Gravity Enabled", Callback = function(v)
 end })
 EnvGroup:CreateSlider({ Name = "Gravity", Range = {0, 500}, Increment = 0.1, CurrentValue = 196.2, Callback = function(v) Main.Gravity = v end })
 
--- UI Elements: Aimbot Settings (Restored Filtering and Target Part)
+-- UI Elements: Aimbot Settings
 local AimGroup = AimbotTab:CreateGroupbox({ Name = "Aimbot Settings", Column = 1 })
 AimGroup:CreateToggle({ Name = "Enabled", Callback = function(v) Aimbot.Enabled = v end })
 AimGroup:CreateToggle({ Name = "Team Check", Callback = function(v) Aimbot.TeamCheck = v end })
@@ -153,9 +153,16 @@ AimGroup:CreateToggle({ Name = "FOV Circle", CurrentValue = true, Callback = fun
 AimGroup:CreateSlider({ Name = "FOV Radius", Range = {0, 1000}, Increment = 1, CurrentValue = 150, Callback = function(v) Aimbot.FOV = v end })
 AimGroup:CreateSlider({ Name = "Target Range", Range = {0, 10000}, Increment = 1, CurrentValue = 1000, Callback = function(v) Aimbot.Range = v end })
 AimGroup:CreateSlider({ Name = "Smoothness", Range = {0.1, 1}, Increment = 0.05, CurrentValue = 0.5, Callback = function(v) Aimbot.Smoothness = v end })
+
 AimGroup:CreateKeybind({
-    Name = "Aimbot Key", CurrentKeybind = "MouseButton2", HoldToInteract = true,
-    Callback = function(key) Aimbot.Keybind = typeof(key) == "EnumItem" and key.Name or key end
+    Name = "Aimbot Key", CurrentKeybind = "MouseButton2",
+    Callback = function(key) 
+        if typeof(key) == "EnumItem" then
+            Aimbot.Keybind = key.Name
+        elseif type(key) == "string" then
+            Aimbot.Keybind = key
+        end
+    end
 })
 
 local PredGroup = AimbotTab:CreateGroupbox({ Name = "Prediction Settings", Column = 2 })
@@ -167,7 +174,6 @@ PredGroup:CreateToggle({ Name = "Show Projectile Path", Callback = function(v)
 end })
 local SpeedSlider = PredGroup:CreateSlider({ Name = "Bullet Speed", Range = {10, 10000}, Increment = 10, CurrentValue = 1500, Callback = function(v) Aimbot.BulletSpeed = v end })
 local DropSlider = PredGroup:CreateSlider({ Name = "Drop Factor", Range = {0, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) Aimbot.BulletDropAmount = v end })
-
 
 -- UI Elements: Combat
 local CombatGroup = CombatTab:CreateGroupbox({ Name = "Calibration Tools", Column = 1 })
@@ -183,11 +189,18 @@ local TargetDropdown = CombatGroup:CreateDropdown({
     Name = "Calibration Target", Options = PlayerList, CurrentOption = "None",
     Callback = function(val) CalibrationTarget = Players:FindFirstChild(val[1] or val) end
 })
+
 Players.PlayerAdded:Connect(function(p)
     if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetValues(PlayerList) end) end
 end)
 Players.PlayerRemoving:Connect(function(p)
-    for i, name in ipairs(PlayerList) do if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetValues(PlayerList) end); break end end
+    for i, name in ipairs(PlayerList) do 
+        if name == p.Name then 
+            table.remove(PlayerList, i)
+            pcall(function() TargetDropdown:SetValues(PlayerList) end) 
+            break 
+        end 
+    end
 end)
 
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Callback = function()
@@ -197,7 +210,8 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Callback = function()
     local targetPart = char:FindFirstChild("HumanoidRootPart")
     camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
     local initialHealth, startTime, distance = char.Humanoid.Health, os.clock(), (targetPart.Position - camera.CFrame.Position).Magnitude
-    mouse1press() task.wait(0.05) mouse1release()
+    
+    mouse1click()
 
     task.spawn(function()
         local success = false
@@ -222,14 +236,18 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Callback = function()
     local targetPart = char:FindFirstChild("HumanoidRootPart")
     camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
     local initialHealth, startTime = char.Humanoid.Health, os.clock()
-    mouse1press() task.wait(0.05) mouse1release()
+    
+    mouse1click()
 
     task.spawn(function()
         while os.clock() - startTime < 2 do
             if char.Humanoid.Health < initialHealth then
-                Aimbot.BulletDropAmount = math.floor((2 * 50) / ((os.clock() - startTime)^2))
-                DropSlider:Set(Aimbot.BulletDropAmount)
-                Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted.", Duration = 3 })
+                local t = os.clock() - startTime
+                if t > 0 then
+                    Aimbot.BulletDropAmount = math.floor((2 * 50) / (t^2))
+                    DropSlider:Set(Aimbot.BulletDropAmount)
+                    Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted.", Duration = 3 })
+                end
                 break
             end
             task.wait()
@@ -238,7 +256,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Callback = function()
     end)
 end})
 
--- UI Elements: Visuals (Restored Inverse Friends)
+-- UI Elements: Visuals
 local ESPSetGroup = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 })
 ESPSetGroup:CreateToggle({ Name = "Enable ESP", Callback = function(v) Visuals.ESP = v if not v then espFolder:ClearAllChildren() end end })
 ESPSetGroup:CreateToggle({ Name = "Tracers", CurrentValue = true, Callback = function(v) Visuals.Tracers = v end })
@@ -255,7 +273,7 @@ SettingsTab:BuildConfigGroupbox(1)
 local ThemeGroup = SettingsTab:CreateGroupbox({ Name = "Theme Manager", Column = 2 })
 ThemeGroup:CreateColorpicker({ Name = "UI Accent Color", DefaultColor = Color3.fromRGB(170, 85, 255), Callback = function(color) Starlight:SetThemeColor(color) end })
 
--- UI Elements: Credits (Restored)
+-- UI Elements: Credits
 local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 })
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 })
 local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 })
@@ -277,16 +295,26 @@ local function isPlayerFriend(targetPlayer)
     return friendCache[targetPlayer.UserId]
 end
 
--- Helper Functions
+-- [FIX 1]: Fixed Raycast Visibility Check
 local function IsVisible(part)
     if not Aimbot.VisibleCheck then return true end
     local char = Player.Character
     if not char then return false end
+    
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {char, part.Parent}
-    local result = workspace:Raycast(camera.CFrame.Position, (part.Position - camera.CFrame.Position), params)
-    return result == nil
+    params.FilterDescendantsInstances = {char} -- Only exclude the local player
+    
+    local dir = (part.Position - camera.CFrame.Position)
+    local result = workspace:Raycast(camera.CFrame.Position, dir, params)
+    
+    if result then
+        if result.Instance:IsDescendantOf(part.Parent) then
+            return true
+        end
+        return false
+    end
+    return true
 end
 
 local function GetPlayerColor(p)
@@ -344,7 +372,7 @@ local function UpdateVisualizer()
     end
 end
 
--- Main Loop
+-- Main Render Loop
 RunService.RenderStepped:Connect(function(dt)
     UpdateVisualizer()
     if Main.WalkSpeedEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.WalkSpeed = Main.WalkSpeed end
@@ -379,7 +407,7 @@ RunService.RenderStepped:Connect(function(dt)
                             local head = p.Character:FindFirstChild("Head")
                             local namePos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, 3, 0)) or screenPos
                             drawings.NameText.Text = isPlayerFriend(p) and "(Friend) " .. p.Name or p.Name
-                            drawings.NameText.Position = Vector2.new(namePos.X, namePos.Y)
+                            drawings.NameText.Position = Vector2.new(namePos.X, namePos.Y - 30)
                             drawings.NameText.Color = color
                             drawings.NameText.Center = true
                             drawings.NameText.Outline = true
@@ -392,11 +420,15 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- Aimbot Logic (Restored Target Filtering)
+-- Aimbot Target Calculation
 local function GetAimbotTarget()
     local closest = nil
     local bestValue = math.huge
     local mouseLoc = UserInputService:GetMouseLocation()
+    
+    -- [FIX 5]: Safe LocalRoot validation
+    local localRoot = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return nil end
 
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") then
@@ -409,7 +441,7 @@ local function GetAimbotTarget()
 
             local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
             local distToMouse = (Vector2.new(mouseLoc.X, mouseLoc.Y) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
-            local distToPlayer = (root.Position - (Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") and Player.Character.HumanoidRootPart.Position or Vector3.zero)).Magnitude
+            local distToPlayer = (root.Position - localRoot.Position).Magnitude
 
             if onScreen and distToMouse <= Aimbot.FOV and distToPlayer <= Aimbot.Range and IsVisible(part) then
                 if Aimbot.Filtering == "ClosestToMouse" and distToMouse < bestValue then bestValue = distToMouse; closest = p
@@ -423,6 +455,9 @@ end
 
 local function StartAimbot()
     if not Aimbot.Enabled then return end
+    -- [FIX 2]: Disconnect old connection immediately to prevent lag stacking
+    if AimbotConnection then AimbotConnection:Disconnect() end 
+    
     Target = GetAimbotTarget()
     if not Target then return end
 
@@ -434,7 +469,6 @@ local function StartAimbot()
         local root = Target.Character:FindFirstChild("HumanoidRootPart")
         local pos
         
-        -- Legit Randomizer Logic Restored
         if Aimbot.TargetPart ~= "Legit" then
             local p = Target.Character:FindFirstChild(Aimbot.TargetPart)
             if not p then StopAimbot() return end
@@ -464,15 +498,23 @@ function StopAimbot()
     Target = nil
 end
 
+-- [FIX 3]: Flawless Keyboard/Mouse input extraction
 UserInputService.InputBegan:Connect(function(i, gp)
-    if not gp and (i.UserInputType.Name == Aimbot.Keybind or i.KeyCode.Name == Aimbot.Keybind) then StartAimbot() end
-end)
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType.Name == Aimbot.Keybind or i.KeyCode.Name == Aimbot.Keybind then StopAimbot() end
+    if gp then return end
+    local keyName = (i.UserInputType == Enum.UserInputType.Keyboard) and i.KeyCode.Name or i.UserInputType.Name
+    if keyName == Aimbot.Keybind then StartAimbot() end
 end)
 
+UserInputService.InputEnded:Connect(function(i)
+    local keyName = (i.UserInputType == Enum.UserInputType.Keyboard) and i.KeyCode.Name or i.UserInputType.Name
+    if keyName == Aimbot.Keybind then StopAimbot() end
+end)
+
+-- [FIX 4]: Clean up highlights and drawings when players leave
 Players.PlayerRemoving:Connect(function(p)
     if ESPDrawings[p] then ESPDrawings[p].Tracer:Remove(); ESPDrawings[p].NameText:Remove(); ESPDrawings[p] = nil end
+    local hl = espFolder:FindFirstChild(p.Name .. "_ESP")
+    if hl then hl:Destroy() end
 end)
 
 Starlight:LoadAutoloadConfig()
