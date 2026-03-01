@@ -25,7 +25,7 @@ local PredDotDrawing = Drawing.new("Circle")
 PredDotDrawing.Color = Color3.new(1, 0, 0)
 PredDotDrawing.Filled = true
 PredDotDrawing.Thickness = 1
-PredDotDrawing.NumSides = 64 -- Fixed: Prevents Drawing API crashes on some executors
+PredDotDrawing.NumSides = 64
 PredDotDrawing.Radius = 4
 PredDotDrawing.Visible = false
 
@@ -61,7 +61,7 @@ local Aimbot = {
 }
 
 local Combat = {
-    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false, RecoilStrength = 1
+    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false
 }
 
 local Visuals = {
@@ -294,12 +294,10 @@ PredictionSettingsGroupbox:CreateSlider({
 }, "BulletDrop_Slider")
 
 
--- Combat Tab (No Recoil & Triggerbot)
+-- Combat Tab
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
-
-WeaponGroup:CreateToggle({ Name = "Recoil Control (Anti-Recoil)", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
-WeaponGroup:CreateSlider({ Name = "Pull-Down Strength", Range = {0, 10}, Increment = 0.1, CurrentValue = 1, Callback = function(v) Combat.RecoilStrength = v end }, "RecoilStrength_Slider")
+WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
 
 
 -- Visuals Tab
@@ -499,11 +497,31 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- NO RECOIL / RECOIL COMPENSATOR
-noRecoilRender = RunService.RenderStepped:Connect(function(dt)
-    if Combat.NoRecoil and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
-        if Aimbotting ~= nil then return end -- Let Aimbot handle camera if active
-        workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * CFrame.Angles(-math.rad(Combat.RecoilStrength * (dt * 60)), 0, 0)
+-- NO RECOIL LOGIC (Allows Camera Aiming & WASD Movement)
+local LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+noRecoilRender = RunService.RenderStepped:Connect(function()
+    if Combat.NoRecoil then
+        -- Temporarily disable No Recoil if the Aimbot is actively tracking
+        if Aimbotting ~= nil then 
+            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
+            return 
+        end
+
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            local delta = UserInputService:GetMouseDelta()
+            
+            -- If the user physically moved the mouse, allow the movement to apply
+            if delta.Magnitude > 0 then
+                LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+            else
+                -- If the mouse is still, lock the rotation to completely negate game recoil
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation
+            end
+        else
+            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+        end
+    else
+        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
     end
 end)
 
@@ -533,6 +551,22 @@ local function GetMouseDistanceToPlayer(player)
     local dx = screenPoint.X - mouseLoc.X
     local dy = screenPoint.Y - mouseLoc.Y
     return math.sqrt(dx*dx + dy*dy)
+end
+
+-- [RESTORED] Target Validator
+local function ValidTargetCheck(player)
+    if player == Player then return false end
+    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local part = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
+    if not part then return false end
+    
+    return IsVisible(part)
 end
 
 -- Aimbot Target Acquisition
@@ -613,7 +647,6 @@ local function UpdatePredictionDot()
         local distance = (position - workspace.CurrentCamera.CFrame.Position).Magnitude
         local bulletTravelTime = distance / Aimbot.BulletSpeed
         
-        -- Fixed: Safer velocity checks
         local targetVelocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
         if targetVelocity then
             position = position + (targetVelocity * bulletTravelTime)
@@ -637,7 +670,7 @@ end
 
 -- Main Render/ESP Loop
 mainRenderLoop = RunService.RenderStepped:Connect(function()
-    pcall(UpdatePredictionDot) -- Fixed: Protects against random mid-frame instance deletions
+    pcall(UpdatePredictionDot)
 
     local camera = workspace.CurrentCamera
     for _, p in ipairs(Players:GetPlayers()) do
@@ -752,7 +785,6 @@ local function aimbotKeyDown()
             local distance = (position - camera.CFrame.Position).Magnitude
             local bulletTravelTime = distance / Aimbot.BulletSpeed
             
-            -- Fixed: Safer velocity checks here as well
             local targetVelocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
             if targetVelocity then
                 position = position + (targetVelocity * bulletTravelTime)
