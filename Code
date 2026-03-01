@@ -31,7 +31,7 @@ PredictionDot.CanCollide = false
 PredictionDot.CanQuery = false
 PredictionDot.CanTouch = false
 PredictionDot.Material = Enum.Material.Neon
-PredictionDot.Color = Color3.new(1, 0, 0) -- Red Dot
+PredictionDot.Color = Color3.new(1, 0, 0)
 
 -- Connection Storage for Unloading
 local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
@@ -323,9 +323,8 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Calibration Target Helper (Supports NPCs)
+-- Calibration Target Helper
 local function GetCalibrationTargetModel()
-    -- 1. Check specific manually selected player first
     if CalibrationTarget and CalibrationTarget ~= Player then
         local char = CalibrationTarget.Character
         if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
@@ -335,7 +334,6 @@ local function GetCalibrationTargetModel()
         end
     end
 
-    -- 2. Fallback: Find closest valid Humanoid (Players & NPCs) to the mouse
     local nearestChar = nil
     local minDist = math.huge
     local mouseLoc = UserInputService:GetMouseLocation()
@@ -346,7 +344,6 @@ local function GetCalibrationTargetModel()
             if char and char:IsA("Model") and char ~= Player.Character then
                 local root = char:FindFirstChild("HumanoidRootPart")
                 if root then
-                    -- Check if it belongs to a player for team check logic
                     local targetPlayer = Players:GetPlayerFromCharacter(char)
                     if targetPlayer and Aimbot.TeamCheck and Player.Team and targetPlayer.Team and targetPlayer.Team == Player.Team then
                         continue
@@ -369,15 +366,10 @@ local function GetCalibrationTargetModel()
     return nearestChar
 end
 
--- SPEED CALIBRATION (Manual Fire & NPC Support)
+-- SPEED CALIBRATION (Manual Fire Only)
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
-    if not Player.Character or not Player.Character:FindFirstChildOfClass("Tool") then
-        Starlight:Notification({ Title = "Error", Content = "You must hold a tool (gun) to calibrate.", Duration = 3 })
-        return
-    end
-
     local targetChar = GetCalibrationTargetModel()
     if not targetChar then
         Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
@@ -388,7 +380,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually.", Duration = 4 })
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -397,7 +389,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
         end
     end)
 
-    -- Detect Manual Shot
+    -- Wait for manual click
     local shotFired = false
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gp)
@@ -449,15 +441,10 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     end)
 end}, "CalibrateSpeed_Button")
 
--- DROP CALIBRATION (Manual Fire & NPC Support)
+-- DROP CALIBRATION (Manual Fire Only)
 CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
-    if not Player.Character or not Player.Character:FindFirstChildOfClass("Tool") then
-        Starlight:Notification({ Title = "Error", Content = "You must hold a tool (gun) to calibrate.", Duration = 3 })
-        return
-    end
-
     local targetChar = GetCalibrationTargetModel()
     if not targetChar then
         Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
@@ -468,7 +455,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually.", Duration = 4 })
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -477,7 +464,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
         end
     end)
 
-    -- Detect Manual Shot
+    -- Wait for manual click
     local shotFired = false
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gp)
