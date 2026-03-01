@@ -60,7 +60,7 @@ local Aimbot = {
 }
 
 local Combat = {
-    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false
+    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false, RecoilStrength = 1
 }
 
 local Visuals = {
@@ -293,10 +293,12 @@ PredictionSettingsGroupbox:CreateSlider({
 }, "BulletDrop_Slider")
 
 
--- Combat Tab
+-- Combat Tab (No Recoil & Triggerbot)
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
-WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
+
+WeaponGroup:CreateToggle({ Name = "Recoil Control (Anti-Recoil)", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
+WeaponGroup:CreateSlider({ Name = "Pull-Down Strength", Range = {0, 10}, Increment = 0.1, CurrentValue = 1, Callback = function(v) Combat.RecoilStrength = v end }, "RecoilStrength_Slider")
 
 
 -- Visuals Tab
@@ -461,7 +463,7 @@ local function IsVisible(part)
 end
 
 
--- Optimized Combat Background Loops
+-- Combat Loops
 local triggerbotDebounce = false
 combatHeartbeat = RunService.Heartbeat:Connect(function()
     if Combat.Triggerbot and not triggerbotDebounce then
@@ -496,31 +498,14 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- NO RECOIL LOGIC (Allows Camera Aiming & WASD Movement)
-local LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-noRecoilRender = RunService.RenderStepped:Connect(function()
-    if Combat.NoRecoil then
-        -- Temporarily disable No Recoil if the Aimbot is actively tracking
-        if Aimbotting ~= nil then 
-            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
-            return 
-        end
-
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            local delta = UserInputService:GetMouseDelta()
-            
-            -- If the user physically moved the mouse, allow the movement to apply
-            if delta.Magnitude > 0 then
-                LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-            else
-                -- If the mouse is still, lock the rotation to completely negate game recoil
-                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation
-            end
-        else
-            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-        end
-    else
-        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+-- NO RECOIL / RECOIL COMPENSATOR
+-- This smoothly pitches the camera down while shooting to cancel out recoil,
+-- allowing you to still aim and move normally with your mouse and WASD.
+noRecoilRender = RunService.RenderStepped:Connect(function(dt)
+    if Combat.NoRecoil and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
+        if Aimbotting ~= nil then return end -- Let Aimbot handle camera if active
+        -- Pitch down smoothly based on the strength slider
+        workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * CFrame.Angles(-math.rad(Combat.RecoilStrength * (dt * 60)), 0, 0)
     end
 end)
 
