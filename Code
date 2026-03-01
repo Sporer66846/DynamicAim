@@ -15,12 +15,10 @@ espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 -- Logic Variables
 local ESPDrawings = {}
 local Target = nil
-local CalibrationTarget = nil
 local Aimbotting = nil
 local rainbowing = nil
 local Noclipping = nil
 local ClippingParts = {}
-local CalibrationLock = false
 
 -- Prediction Dot Setup (2D Drawing for reliability)
 local PredDotDrawing = Drawing.new("Circle")
@@ -32,7 +30,7 @@ PredDotDrawing.Visible = false
 
 -- Connection Storage for Unloading
 local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
-local inputBeganConn, inputEndedConn, playerAddedConn, playerRemovingConn
+local inputBeganConn, inputEndedConn
 
 -- State Tables
 local Main = {
@@ -86,7 +84,7 @@ local MiscallaneousSection = Window:CreateTabSection("Miscellaneous")
 
 local HomeTab = MainSection:CreateTab({ Name = "Home", Icon = NebulaIcons:GetIcon('home', 'Lucide'), Columns = 2 }, "Home_Tab")
 local AimbotTab = MainSection:CreateTab({ Name = "Aimbot", Icon = NebulaIcons:GetIcon('mouse', 'Lucide'), Columns = 2 }, "Aimbot_Tab")
-local CombatTab = MainSection:CreateTab({ Name = "Combat", Icon = NebulaIcons:GetIcon('swords', 'Lucide'), Columns = 2 }, "Combat_Tab")
+local CombatTab = MainSection:CreateTab({ Name = "Combat", Icon = NebulaIcons:GetIcon('swords', 'Lucide'), Columns = 1 }, "Combat_Tab")
 local VisualsTab = MainSection:CreateTab({ Name = "Visuals", Icon = NebulaIcons:GetIcon('eye', 'Lucide'), Columns = 1 }, "Visuals_Tab")
 local SettingsTab = MiscallaneousSection:CreateTab({ Name = "Settings", Icon = NebulaIcons:GetIcon('settings', 'Lucide'), Columns = 2 }, "Settings_Tab")
 local CreditsTab = MiscallaneousSection:CreateTab({ Name = "Credits", Icon = NebulaIcons:GetIcon('info', 'Lucide'), Columns = 3 }, "Credits_Tab")
@@ -95,8 +93,7 @@ local CharacterGroupbox = HomeTab:CreateGroupbox({ Name = "Character", Column = 
 local EnvironmentGroupbox = HomeTab:CreateGroupbox({ Name = "Environment", Column = 2 }, "Environment_Groupbox")
 local AimbotSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Aimbot Settings", Column = 1 }, "Aimbot_Settings_Groupbox")
 local PredictionSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Prediction Settings", Column = 2 }, "Prediction_Settings_Groupbox")
-local CombatGroup = CombatTab:CreateGroupbox({ Name = "Calibration Tools", Column = 1 }, "Calibration_Groupbox")
-local WeaponGroup = CombatTab:CreateGroupbox({ Name = "Weapon Mods", Column = 2 }, "WeaponMods_Groupbox")
+local WeaponGroup = CombatTab:CreateGroupbox({ Name = "Weapon Mods", Column = 1 }, "WeaponMods_Groupbox")
 local ESPSettingsGroupbox = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 }, "ESP_Settings_Groupbox")
 local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 }, "Credits_Groupbox")
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
@@ -280,7 +277,7 @@ PredictionSettingsGroupbox:CreateToggle({
     end
 }, "Visualizer_Toggle")
 
-local BulletSpeedSlider = PredictionSettingsGroupbox:CreateSlider({
+PredictionSettingsGroupbox:CreateSlider({
     Name = "Bullet Speed", Icon = NebulaIcons:GetIcon('gauge', 'Lucide'), Range = {10, 10000}, Increment = 10, CurrentValue = Aimbot.BulletSpeed or 1500,
     Callback = function(Value) Aimbot.BulletSpeed = Value end
 }, "BulletSpeed_Slider")
@@ -290,7 +287,7 @@ PredictionSettingsGroupbox:CreateToggle({
     Callback = function(Value) Aimbot.BulletDrop = Value end
 }, "BulletDrop_Toggle")
 
-local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
+PredictionSettingsGroupbox:CreateSlider({
     Name = "Drop Amount", Icon = NebulaIcons:GetIcon('arrow-down-to-line', 'Lucide'), Range = {1, 200}, Increment = 1, CurrentValue = Aimbot.BulletDropAmount or 50,
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
@@ -300,228 +297,6 @@ local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
 WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
-
-local PlayerList = {"None"}
-for _, p in pairs(Players:GetPlayers()) do if p ~= Player then table.insert(PlayerList, p.Name) end end
-
-local TargetDropdownLabel = CombatGroup:CreateLabel({ Name = "Calibration Target" }, "CalibrationTarget_Label")
-local TargetDropdown = TargetDropdownLabel:AddDropdown({
-    Options = PlayerList, CurrentOption = {"None"}, MultipleOptions = false,
-    Callback = function(val) CalibrationTarget = Players:FindFirstChild(val[1] or val) end
-}, "CalibrationTarget_Dropdown")
-
-playerAddedConn = Players.PlayerAdded:Connect(function(p)
-    if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetOptions(PlayerList) end) end
-end)
-
-playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
-    for i, name in ipairs(PlayerList) do 
-        if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetOptions(PlayerList) end); break end 
-    end
-end)
-
--- Calibration Target Helper
-local function GetCalibrationTargetModel()
-    if CalibrationTarget and CalibrationTarget ~= Player then
-        local char = CalibrationTarget.Character
-        if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-            if not (Aimbot.TeamCheck and Player.Team and CalibrationTarget.Team and Player.Team == CalibrationTarget.Team) then
-                return char
-            end
-        end
-    end
-
-    local nearestChar = nil
-    local minDist = math.huge
-    local mouseLoc = UserInputService:GetMouseLocation()
-
-    for _, hum in ipairs(workspace:GetDescendants()) do
-        if hum:IsA("Humanoid") and hum.Health > 0 then
-            local char = hum.Parent
-            if char and char:IsA("Model") and char ~= Player.Character then
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local targetPlayer = Players:GetPlayerFromCharacter(char)
-                    if targetPlayer and Aimbot.TeamCheck and Player.Team and targetPlayer.Team and targetPlayer.Team == Player.Team then
-                        continue
-                    end
-
-                    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
-                    if onScreen and screenPoint.Z > 0 then
-                        local dx = screenPoint.X - mouseLoc.X
-                        local dy = screenPoint.Y - mouseLoc.Y
-                        local dist = math.sqrt(dx*dx + dy*dy)
-                        if dist < minDist then
-                            minDist = dist
-                            nearestChar = char
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nearestChar
-end
-
--- SPEED CALIBRATION (Manual Fire & UI Toggle)
-CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
-    if CalibrationLock then return end
-    
-    local targetChar = GetCalibrationTargetModel()
-    if not targetChar then
-        Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
-        return
-    end
-
-    CalibrationLock = true
-    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
-    
-    -- Hide the UI to allow mouse centering
-    pcall(function() Window:Toggle() end)
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
-
-    -- Lock Camera
-    local aimConn = RunService.RenderStepped:Connect(function()
-        if targetPart then
-            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-        end
-    end)
-
-    task.spawn(function()
-        -- Step 1: Wait until user fully releases the mouse button from clicking the UI
-        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-            task.wait()
-        end
-
-        -- Step 2: Wait for the user to shoot (press M1)
-        local shotFired = false
-        local waitTime = 0
-        while waitTime < 5 do
-            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-                shotFired = true
-                break
-            end
-            task.wait(0.05)
-            waitTime = waitTime + 0.05
-        end
-
-        if not shotFired then
-            Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
-            if aimConn then aimConn:Disconnect() end
-            CalibrationLock = false
-            pcall(function() Window:Toggle() end) -- Show UI again
-            return
-        end
-
-        -- Step 3: Wait for Damage Registration
-        local initialHealth = targetChar.Humanoid.Health
-        local distance = (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
-        local startTime = os.clock()
-        local success = false
-
-        while os.clock() - startTime < 3 do -- Wait up to 3 seconds for bullet travel/hit
-            if targetChar.Humanoid.Health < initialHealth - 0.1 then
-                local t = os.clock() - startTime
-                if t > 0 then
-                    Aimbot.BulletSpeed = math.floor(distance / t)
-                    BulletSpeedSlider:Set(Aimbot.BulletSpeed)
-                    Starlight:Notification({ Title = "Success", Content = "Speed set to: " .. Aimbot.BulletSpeed, Duration = 3 })
-                end
-                success = true 
-                break
-            end
-            task.wait()
-        end
-        
-        if not success then 
-            Starlight:Notification({ Title = "Error", Content = "No hit detected. Target didn't take damage.", Duration = 3 }) 
-        end
-        if aimConn then aimConn:Disconnect() end
-        CalibrationLock = false
-        pcall(function() Window:Toggle() end) -- Show UI again
-    end)
-end}, "CalibrateSpeed_Button")
-
--- DROP CALIBRATION (Manual Fire & UI Toggle)
-CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
-    if CalibrationLock then return end
-    
-    local targetChar = GetCalibrationTargetModel()
-    if not targetChar then
-        Starlight:Notification({ Title = "Error", Content = "No valid enemy targets found.", Duration = 3 })
-        return
-    end
-
-    CalibrationLock = true
-    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
-    
-    -- Hide the UI to allow mouse centering
-    pcall(function() Window:Toggle() end)
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
-
-    -- Lock Camera
-    local aimConn = RunService.RenderStepped:Connect(function()
-        if targetPart then
-            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
-        end
-    end)
-
-    task.spawn(function()
-        -- Step 1: Wait until user fully releases the mouse button from clicking the UI
-        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-            task.wait()
-        end
-
-        -- Step 2: Wait for the user to shoot (press M1)
-        local shotFired = false
-        local waitTime = 0
-        while waitTime < 5 do
-            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-                shotFired = true
-                break
-            end
-            task.wait(0.05)
-            waitTime = waitTime + 0.05
-        end
-
-        if not shotFired then
-            Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
-            if aimConn then aimConn:Disconnect() end
-            CalibrationLock = false
-            pcall(function() Window:Toggle() end) -- Show UI again
-            return
-        end
-
-        -- Step 3: Wait for Damage Registration
-        local initialHealth = targetChar.Humanoid.Health
-        local startTime = os.clock()
-        local success = false
-
-        while os.clock() - startTime < 3 do -- Wait up to 3 seconds for bullet travel/hit
-            if targetChar.Humanoid.Health < initialHealth - 0.1 then
-                local t = os.clock() - startTime
-                if t > 0 then
-                    local estimatedDrop = math.floor(196.2 * (t * 2))
-                    Aimbot.BulletDropAmount = math.clamp(estimatedDrop, 0, 500)
-                    BulletDropSlider:Set(Aimbot.BulletDropAmount)
-                    Starlight:Notification({ Title = "Success", Content = "Drop Factor Adjusted: " .. Aimbot.BulletDropAmount, Duration = 3 })
-                end
-                success = true
-                break
-            end
-            task.wait()
-        end
-        
-        if not success then 
-            Starlight:Notification({ Title = "Error", Content = "No hit detected. Target didn't take damage.", Duration = 3 }) 
-        end
-        if aimConn then aimConn:Disconnect() end
-        CalibrationLock = false
-        pcall(function() Window:Toggle() end) -- Show UI again
-    end)
-end}, "CalibrateDrop_Button")
 
 
 -- Visuals Tab
@@ -608,8 +383,6 @@ local function UnloadScript()
     if mainRenderLoop then mainRenderLoop:Disconnect() end
     if inputBeganConn then inputBeganConn:Disconnect() end
     if inputEndedConn then inputEndedConn:Disconnect() end
-    if playerAddedConn then playerAddedConn:Disconnect() end
-    if playerRemovingConn then playerRemovingConn:Disconnect() end
 
     pcall(function() Window:Destroy() end)
     pcall(function() Starlight:Unload() end)
@@ -723,15 +496,24 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
-local LastCameraRotation = workspace.CurrentCamera.CFrame
+-- NO RECOIL LOGIC (Fixed WASD Movement & Aimbot Synergy)
+local LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
 noRecoilRender = RunService.RenderStepped:Connect(function()
     if Combat.NoRecoil then
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
-            workspace.CurrentCamera.CFrame = LastCameraRotation 
+        -- If the Aimbot is actively tracking someone, bypass No Recoil rotation lock
+        if Aimbotting ~= nil then
+            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+            return
         end
-        LastCameraRotation = workspace.CurrentCamera.CFrame
+
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
+            -- Lock rotation to prevent recoil kick, but apply it to the CURRENT position to allow WASD movement
+            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation 
+        else 
+            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+        end
     else 
-        LastCameraRotation = workspace.CurrentCamera.CFrame 
+        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
     end
 end)
 
