@@ -9,7 +9,6 @@ local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/neb
 
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
-local camera = workspace.CurrentCamera
 local espFolder = Instance.new("Folder")
 espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 
@@ -46,7 +45,7 @@ local AimbotFiltering = {
 local Aimbot = {
     Enabled = false, TeamCheck = false, VisibleCheck = true,
     TargetPart = AimbotTargetPart.Head, FOVCircle = true, FOV = 150,
-    Range = 1000, Smoothness = 0.5, Filtering = "ClosestToMouse",
+    Range = 1000, Smoothness = 0.5, Filtering = AimbotFiltering.ClosestToMouse,
     Prediction = false, BulletSpeed = 1500, BulletDrop = false, BulletDropAmount = 50,
     Keybind = "MouseButton2", Visualizer = false
 }
@@ -56,8 +55,10 @@ local Combat = {
 }
 
 local Visuals = {
-    ESP = false, Tracers = true, UseTeamColor = false,
-    Rainbow = false, InverseFriends = false, CurrentColor = Color3.new(1, 1, 1)
+    ESP = false, ESPColor = Color3.fromRGB(255, 255, 255), ESPHighlights = true,
+    Tracers = true, TracerColor = Color3.fromRGB(255, 255, 255),
+    Rainbow = false, InverseFriends = false, UseTeamColor = false,
+    CurrentColor = Color3.new(1, 1, 1)
 }
 
 -- Window Setup
@@ -86,7 +87,6 @@ local PredictionSettingsGroupbox = AimbotTab:CreateGroupbox({ Name = "Prediction
 local CombatGroup = CombatTab:CreateGroupbox({ Name = "Calibration Tools", Column = 1 }, "Calibration_Groupbox")
 local WeaponGroup = CombatTab:CreateGroupbox({ Name = "Weapon Mods", Column = 2 }, "WeaponMods_Groupbox")
 local ESPSettingsGroupbox = VisualsTab:CreateGroupbox({ Name = "ESP Settings", Column = 1 }, "ESP_Settings_Groupbox")
-local ThemeGroup = SettingsTab:CreateGroupbox({ Name = "Theme Manager", Column = 2 }, "Theme_Groupbox")
 local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1 }, "Credits_Groupbox")
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
 local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 }, "Socials_Groupbox")
@@ -105,7 +105,7 @@ CharacterGroupbox:CreateToggle({
 }, "WalkSpeed_Toggle")
 
 CharacterGroupbox:CreateSlider({
-    Name = "WalkSpeed", Icon = NebulaIcons:GetIcon('chevrons-up', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.WalkSpeed,
+    Name = "WalkSpeed", Icon = NebulaIcons:GetIcon('chevrons-up', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.WalkSpeed or 16,
     Callback = function(Value)
         Main.WalkSpeed = Value
         if Main.WalkSpeedEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
@@ -127,7 +127,7 @@ CharacterGroupbox:CreateToggle({
 }, "JumpPower_Toggle")
 
 CharacterGroupbox:CreateSlider({
-    Name = "JumpPower", Icon = NebulaIcons:GetIcon('arrow-big-up-dash', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.JumpPower,
+    Name = "JumpPower", Icon = NebulaIcons:GetIcon('arrow-big-up-dash', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.JumpPower or 50,
     Callback = function(Value)
         Main.JumpPower = Value
         if Main.JumpPowerEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
@@ -142,18 +142,19 @@ CharacterGroupbox:CreateToggle({
         Main.NoClipEnabled = Value
         if Value then
             ClippingParts = {}
-            Noclipping = RunService.Stepped:Connect(function()
-                if Player.Character then
+            local function NoclipLoop()
+                if Main.NoClipEnabled == true and Player.Character ~= nil then
                     for _, child in pairs(Player.Character:GetDescendants()) do
-                        if child:IsA("BasePart") and child.CanCollide then
+                        if child:IsA("BasePart") and child.CanCollide == true then
                             child.CanCollide = false
                             if not table.find(ClippingParts, child) then table.insert(ClippingParts, child) end
                         end
                     end
                 end
-            end)
+            end
+            Noclipping = RunService.Stepped:Connect(NoclipLoop)
         else
-            if Noclipping then Noclipping:Disconnect() Noclipping = nil end
+            if Noclipping ~= nil then Noclipping:Disconnect() Noclipping = nil end
             for _, part in pairs(ClippingParts) do if part and part.Parent then part.CanCollide = true end end
             ClippingParts = {}
         end
@@ -169,7 +170,7 @@ EnvironmentGroupbox:CreateToggle({
 }, "Gravity_Toggle")
 
 EnvironmentGroupbox:CreateSlider({
-    Name = "Gravity", Icon = NebulaIcons:GetIcon('earth', 'Lucide'), Range = {0, 500}, Increment = 0.1, CurrentValue = Main.Gravity,
+    Name = "Gravity", Icon = NebulaIcons:GetIcon('earth', 'Lucide'), Range = {0, 500}, Increment = 0.1, CurrentValue = Main.Gravity or 196.2,
     Callback = function(Value)
         Main.Gravity = Value
         if Main.GravityEnabled then workspace.Gravity = Value end
@@ -206,6 +207,14 @@ FilterLabel:AddDropdown({
     Callback = function(Options) Aimbot.Filtering = AimbotFiltering[Options[1]] end,
 }, "Filtering_Dropdown")
 
+-- FIXED: Replaced custom Keybind method with a stable Dropdown
+local KeybindLabel = AimbotSettingsGroupbox:CreateLabel({ Name = "Aimbot Keybind" }, "Aimbot_Keybind_Label")
+KeybindLabel:AddDropdown({
+    Options = {"MouseButton2", "MouseButton1", "Q", "E", "F", "C", "V", "LeftAlt"},
+    CurrentOption = {"MouseButton2"}, MultipleOptions = false,
+    Callback = function(Options) Aimbot.Keybind = Options[1] end,
+}, "Aimbot_Keybind_Dropdown")
+
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Color = Color3.new(1, 1, 1)
 FOVCircle.Visible = false
@@ -232,7 +241,7 @@ AimbotSettingsGroupbox:CreateToggle({
 }, "FOVCircle_Toggle")
 
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "FOV", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV,
+    Name = "FOV", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV or 150,
     Callback = function(Value)
         Aimbot.FOV = Value
         if Aimbot.FOVCircle then FOVCircle.Radius = Value end
@@ -240,21 +249,14 @@ AimbotSettingsGroupbox:CreateSlider({
 }, "FOV_Slider")
 
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "Range", Icon = NebulaIcons:GetIcon('binoculars', 'Lucide'), Range = {0, 10000}, Increment = 1, CurrentValue = Aimbot.Range,
+    Name = "Range", Icon = NebulaIcons:GetIcon('binoculars', 'Lucide'), Range = {0, 10000}, Increment = 1, CurrentValue = Aimbot.Range or 1000,
     Callback = function(Value) Aimbot.Range = Value end
 }, "Range_Slider")
 
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), Range = {0.1, 1}, Increment = 0.05, CurrentValue = Aimbot.Smoothness,
+    Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), Range = {0.1, 1}, Increment = 0.05, CurrentValue = Aimbot.Smoothness or 0.5,
     Callback = function(Value) Aimbot.Smoothness = Value end
 }, "Smoothness_Slider")
-
-AimbotSettingsGroupbox:CreateKeybind({
-    Name = "Aimbot Keybind", CurrentKeybind = "MouseButton2", HoldToInteract = true,
-    Callback = function(key) 
-        Aimbot.Keybind = typeof(key) == "EnumItem" and key.Name or key
-    end
-}, "Aimbot_Keybind")
 
 PredictionSettingsGroupbox:CreateToggle({
     Name = "Prediction", CurrentValue = false, Style = 2,
@@ -270,7 +272,7 @@ PredictionSettingsGroupbox:CreateToggle({
 }, "Visualizer_Toggle")
 
 local BulletSpeedSlider = PredictionSettingsGroupbox:CreateSlider({
-    Name = "Bullet Speed", Icon = NebulaIcons:GetIcon('gauge', 'Lucide'), Range = {10, 10000}, Increment = 10, CurrentValue = Aimbot.BulletSpeed,
+    Name = "Bullet Speed", Icon = NebulaIcons:GetIcon('gauge', 'Lucide'), Range = {10, 10000}, Increment = 10, CurrentValue = Aimbot.BulletSpeed or 1500,
     Callback = function(Value) Aimbot.BulletSpeed = Value end
 }, "BulletSpeed_Slider")
 
@@ -280,37 +282,40 @@ PredictionSettingsGroupbox:CreateToggle({
 }, "BulletDrop_Toggle")
 
 local BulletDropSlider = PredictionSettingsGroupbox:CreateSlider({
-    Name = "Drop Amount", Icon = NebulaIcons:GetIcon('arrow-down-to-line', 'Lucide'), Range = {1, 200}, Increment = 1, CurrentValue = Aimbot.BulletDropAmount,
+    Name = "Drop Amount", Icon = NebulaIcons:GetIcon('arrow-down-to-line', 'Lucide'), Range = {1, 200}, Increment = 1, CurrentValue = Aimbot.BulletDropAmount or 50,
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
 
 -- Combat Tab
-WeaponGroup:CreateToggle({ Name = "Triggerbot", Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
+WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
-WeaponGroup:CreateToggle({ Name = "No Recoil", Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
+WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
 
 local PlayerList = {"None"}
 for _, p in pairs(Players:GetPlayers()) do if p ~= Player then table.insert(PlayerList, p.Name) end end
-local TargetDropdown = CombatGroup:CreateDropdown({
-    Name = "Calibration Target", Options = PlayerList, CurrentOption = "None",
+
+local TargetDropdownLabel = CombatGroup:CreateLabel({ Name = "Calibration Target" }, "CalibrationTarget_Label")
+local TargetDropdown = TargetDropdownLabel:AddDropdown({
+    Options = PlayerList, CurrentOption = {"None"}, MultipleOptions = false,
     Callback = function(val) CalibrationTarget = Players:FindFirstChild(val[1] or val) end
 }, "CalibrationTarget_Dropdown")
 
 Players.PlayerAdded:Connect(function(p)
-    if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetValues(PlayerList) end) end
+    if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetOptions(PlayerList) end) end
 end)
 Players.PlayerRemoving:Connect(function(p)
     for i, name in ipairs(PlayerList) do 
-        if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetValues(PlayerList) end); break end 
+        if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetOptions(PlayerList) end); break end 
     end
 end)
 
-CombatGroup:CreateButton({ Name = "Calibrate Speed", Callback = function()
+CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
     CalibrationLock = true
     local char = CalibrationTarget.Character
-    local targetPart = char:FindFirstChild(Aimbot.TargetPart) or char:FindFirstChild("HumanoidRootPart")
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
     workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
     local initialHealth, startTime, distance = char.Humanoid.Health, os.clock(), (targetPart.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
     mouse1click()
@@ -330,11 +335,12 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Callback = function()
     end)
 end}, "CalibrateSpeed_Button")
 
-CombatGroup:CreateButton({ Name = "Calibrate Drop", Callback = function()
+CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock or not CalibrationTarget or not CalibrationTarget.Character or not CalibrationTarget.Character:FindFirstChild("Humanoid") then return end
     CalibrationLock = true
     local char = CalibrationTarget.Character
-    local targetPart = char:FindFirstChild(Aimbot.TargetPart) or char:FindFirstChild("HumanoidRootPart")
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local targetPart = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
     workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, targetPart.Position)
     local initialHealth, startTime = char.Humanoid.Health, os.clock()
     mouse1click()
@@ -396,12 +402,9 @@ ESPSettingsGroupbox:CreateToggle({
 }, "Rainbow_Toggle")
 
 
--- Settings & Configs Tab
+-- Settings & Configs Tab [FIXED: Utilizing built-in Theme Manager]
 SettingsTab:BuildConfigGroupbox(1)
-ThemeGroup:CreateColorpicker({
-    Name = "UI Accent Color", DefaultColor = Color3.fromRGB(170, 85, 255),
-    Callback = function(color) Starlight:SetThemeColor(color) end
-}, "Theme_Colorpicker")
+SettingsTab:BuildThemeGroupbox(2)
 
 
 -- Credits Tab
@@ -448,7 +451,7 @@ local function getColorForPlayer(player)
 end
 
 local function worldToScreen(pos)
-    local screenPos, onScreen = camera:WorldToViewportPoint(pos)
+    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(pos)
     return Vector2.new(screenPos.X, screenPos.Y), onScreen
 end
 
@@ -459,8 +462,8 @@ local function IsVisible(part)
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
     params.FilterDescendantsInstances = {char}
-    local dir = (part.Position - camera.CFrame.Position)
-    local result = workspace:Raycast(camera.CFrame.Position, dir, params)
+    local dir = (part.Position - workspace.CurrentCamera.CFrame.Position)
+    local result = workspace:Raycast(workspace.CurrentCamera.CFrame.Position, dir, params)
     if result then
         if result.Instance:IsDescendantOf(part.Parent) then return true end
         return false
@@ -483,7 +486,7 @@ end)
 RunService.Heartbeat:Connect(function()
     if Combat.Triggerbot then
         local mouseLoc = UserInputService:GetMouseLocation()
-        local ray = camera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
+        local ray = workspace.CurrentCamera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
         local result = workspace:Raycast(ray.Origin, ray.Direction * 1000)
         if result and result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
             local hitPlayer = Players:GetPlayerFromCharacter(result.Instance.Parent)
@@ -496,34 +499,32 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local LastCameraRotation = camera.CFrame
+local LastCameraRotation = workspace.CurrentCamera.CFrame
 RunService.RenderStepped:Connect(function()
     if Combat.NoRecoil then
         if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
-            camera.CFrame = LastCameraRotation 
+            workspace.CurrentCamera.CFrame = LastCameraRotation 
         end
-        LastCameraRotation = camera.CFrame
+        LastCameraRotation = workspace.CurrentCamera.CFrame
     else 
-        LastCameraRotation = camera.CFrame 
+        LastCameraRotation = workspace.CurrentCamera.CFrame 
     end
 end)
 
 local function UpdateVisualizer()
     if not Aimbot.Visualizer then return end
-    local startPos = camera.CFrame.Position
-    local startVel = camera.CFrame.LookVector * Aimbot.BulletSpeed
+    local startPos = workspace.CurrentCamera.CFrame.Position
+    local startVel = workspace.CurrentCamera.CFrame.LookVector * Aimbot.BulletSpeed
     local gravity = Vector3.new(0, -Aimbot.BulletDropAmount, 0)
     for i = 1, 20 do
         if not VisualizerLines[i] then 
-            VisualizerLines[i] = Drawing.new("Line")
-            VisualizerLines[i].Thickness = 1.5
-            VisualizerLines[i].Color = Color3.new(0, 1, 0) 
+            VisualizerLines[i] = Drawing.new("Line"); VisualizerLines[i].Thickness = 1.5; VisualizerLines[i].Color = Color3.new(0, 1, 0) 
         end
         local t1, t2 = (i - 1) * 0.1, i * 0.1
         local p1 = startPos + (startVel * t1) + (0.5 * gravity * t1^2)
         local p2 = startPos + (startVel * t2) + (0.5 * gravity * t2^2)
-        local screenPos1, on1 = camera:WorldToViewportPoint(p1)
-        local screenPos2, on2 = camera:WorldToViewportPoint(p2)
+        local screenPos1, on1 = workspace.CurrentCamera:WorldToViewportPoint(p1)
+        local screenPos2, on2 = workspace.CurrentCamera:WorldToViewportPoint(p2)
         if on1 and on2 then
             VisualizerLines[i].From = Vector2.new(screenPos1.X, screenPos1.Y)
             VisualizerLines[i].To = Vector2.new(screenPos2.X, screenPos2.Y)
@@ -536,6 +537,7 @@ end
 RunService.RenderStepped:Connect(function()
     UpdateVisualizer()
 
+    local camera = workspace.CurrentCamera
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= Player then
             if not ESPDrawings[p] then
@@ -622,7 +624,7 @@ local function GetMouseDistanceToPlayer(player)
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return math.huge end
 
-    local screenPoint, onScreen = camera:WorldToScreenPoint(root.Position)
+    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
     if screenPoint.Z <= 0 then return math.huge end
 
     local mouseLoc = UserInputService:GetMouseLocation()
@@ -704,6 +706,7 @@ local function aimbotKeyDown()
     local switchInterval = 0.3
     local lastSwitchTime = 0
     local currentPart = nil
+    local camera = workspace.CurrentCamera
 
     local function ManipulateCamera(deltaTime)
         if not Target or not Target.Character or not Target.Character:FindFirstChild("Humanoid") or Target.Character.Humanoid.Health <= 0 then
