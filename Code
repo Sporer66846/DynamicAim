@@ -14,7 +14,6 @@ espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 
 -- Logic Variables
 local ESPDrawings = {}
-local VisualizerParts = {}
 local Target = nil
 local CalibrationTarget = nil
 local Aimbotting = nil
@@ -22,6 +21,17 @@ local rainbowing = nil
 local Noclipping = nil
 local ClippingParts = {}
 local CalibrationLock = false
+
+-- Prediction Dot Setup
+local PredictionDot = Instance.new("Part")
+PredictionDot.Shape = Enum.PartType.Ball
+PredictionDot.Size = Vector3.new(0.6, 0.6, 0.6)
+PredictionDot.Anchored = true
+PredictionDot.CanCollide = false
+PredictionDot.CanQuery = false
+PredictionDot.CanTouch = false
+PredictionDot.Material = Enum.Material.Neon
+PredictionDot.Color = Color3.new(1, 0, 0) -- Red Dot
 
 -- Connection Storage for Unloading
 local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
@@ -266,12 +276,10 @@ PredictionSettingsGroupbox:CreateToggle({
 }, "Prediction_Toggle")
 
 PredictionSettingsGroupbox:CreateToggle({
-    Name = "Show Projectile Path", CurrentValue = false, Style = 2,
+    Name = "Show Prediction Dot", CurrentValue = false, Style = 2,
     Callback = function(v) 
         Aimbot.Visualizer = v 
-        if not v then 
-            for _, p in pairs(VisualizerParts) do p.Parent = nil end 
-        end
+        if not v then PredictionDot.Parent = nil end
     end
 }, "Visualizer_Toggle")
 
@@ -315,16 +323,25 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Calibration Target Helper
-local function GetCalibrationTarget()
-    local function isValidCalibTarget(p)
-        if p == Player then return false end
-        if not p.Character or not p.Character:FindFirstChild("Humanoid") or p.Character.Humanoid.Health <= 0 then return false end
-        if Aimbot.TeamCheck and Player.Team and p.Team and Player.Team == p.Team then return false end
-        return true
-    end
+-- Target Helper Validation
+local function ValidTargetCheck(player)
+    if player == Player then return false end
+    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local part = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
+    if not part then return false end
+    
+    return true
+end
 
-    if CalibrationTarget and isValidCalibTarget(CalibrationTarget) then
+-- Calibration Helper
+local function GetCalibrationTarget()
+    if CalibrationTarget and ValidTargetCheck(CalibrationTarget) then
         return CalibrationTarget
     end
 
@@ -333,7 +350,7 @@ local function GetCalibrationTarget()
     local mouseLoc = UserInputService:GetMouseLocation()
 
     for _, p in ipairs(Players:GetPlayers()) do
-        if isValidCalibTarget(p) then
+        if ValidTargetCheck(p) then
             local root = p.Character:FindFirstChild("HumanoidRootPart")
             if root then
                 local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
@@ -521,11 +538,10 @@ local function UnloadScript()
         FOVCircle.Visible = false
         FOVCircle:Remove()
     end
-
-    for _, p in pairs(VisualizerParts) do
-        p:Destroy()
+    
+    if PredictionDot then
+        PredictionDot:Destroy()
     end
-    VisualizerParts = {}
 
     for _, obj in pairs(ESPDrawings) do
         if obj.Tracer then obj.Tracer.Visible = false obj.Tracer:Remove() end
@@ -667,52 +683,121 @@ noRecoilRender = RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 3D Projectile Visualizer
-local function UpdateVisualizer()
-    if not Aimbot.Visualizer then 
-        for _, part in pairs(VisualizerParts) do
-            part.Parent = nil
+
+-- Aimbot Target Calculation Distance Helpers
+local function GetPlayerDistance(targetPlayer)
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then return end
+    local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local Character = Player.Character
+    if not Character then return end
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+
+    if not targetHumanoidRootPart or not HumanoidRootPart then return end
+    return (targetHumanoidRootPart.Position - HumanoidRootPart.Position).Magnitude
+end
+
+local function GetMouseDistanceToPlayer(player)
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return math.huge end
+
+    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
+    if screenPoint.Z <= 0 then return math.huge end
+
+    local mouseLoc = UserInputService:GetMouseLocation()
+    local dx = screenPoint.X - mouseLoc.X
+    local dy = screenPoint.Y - mouseLoc.Y
+    return math.sqrt(dx*dx + dy*dy)
+end
+
+-- Aimbot Target Acquisition
+local function GetAimbotTarget()
+    local playerList = Players:GetPlayers()
+    local closestPlayer = nil
+    
+    if Aimbot.Filtering == "ClosestToMouse" then
+        local shortestDistance = Aimbot.FOV
+        for _, p in ipairs(playerList) do
+            if ValidTargetCheck(p) then
+                local dist2d = GetMouseDistanceToPlayer(p)
+                if dist2d and dist2d < shortestDistance then
+                    local pDist = GetPlayerDistance(p)
+                    if pDist and pDist <= Aimbot.Range then
+                        shortestDistance = dist2d
+                        closestPlayer = p
+                    end
+                end
+            end
         end
+    elseif Aimbot.Filtering == "ClosestToPlayer" then
+        local shortestDistance = Aimbot.Range
+        for _, p in ipairs(playerList) do
+            if ValidTargetCheck(p) then
+                local dist = GetPlayerDistance(p)
+                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
+                if dist and dist < shortestDistance and checkFOV then
+                    closestPlayer = p
+                    shortestDistance = dist
+                end
+            end
+        end
+    elseif Aimbot.Filtering == "LowestHealth" then
+        local lowestHealth = math.huge
+        for _, p in ipairs(playerList) do
+            if ValidTargetCheck(p) then
+                local humanoid = p.Character:FindFirstChild("Humanoid")
+                local dist = GetPlayerDistance(p)
+                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
+                if dist and dist <= Aimbot.Range and checkFOV and humanoid.Health < lowestHealth then
+                    closestPlayer = p
+                    lowestHealth = humanoid.Health
+                end
+            end
+        end
+    end
+    
+    return closestPlayer
+end
+
+-- Single Dot Prediction Visualizer
+local function UpdatePredictionDot()
+    if not Aimbot.Enabled or not Aimbot.Visualizer then 
+        PredictionDot.Parent = nil
         return 
     end
+
+    local bestTarget = Target or GetAimbotTarget()
     
-    local startPos = workspace.CurrentCamera.CFrame.Position
-    local startVel = workspace.CurrentCamera.CFrame.LookVector * Aimbot.BulletSpeed
-    local gravity = Vector3.new(0, -Aimbot.BulletDropAmount, 0)
+    if not bestTarget or not bestTarget.Character or not bestTarget.Character:FindFirstChild("HumanoidRootPart") then
+        PredictionDot.Parent = nil
+        return
+    end
     
-    for i = 1, 20 do
-        local part = VisualizerParts[i]
-        if not part then 
-            part = Instance.new("Part")
-            part.Anchored = true
-            part.CanCollide = false
-            part.CanQuery = false
-            part.CanTouch = false
-            part.Material = Enum.Material.Neon
-            part.Color = Color3.new(0, 1, 0)
-            part.Transparency = 0.5
-            VisualizerParts[i] = part
-        end
-        
-        local t1 = (i - 1) * 0.1
-        local t2 = i * 0.1
-        local p1 = startPos + (startVel * t1) + (0.5 * gravity * t1^2)
-        local p2 = startPos + (startVel * t2) + (0.5 * gravity * t2^2)
-        
-        local dist = (p2 - p1).Magnitude
-        if dist > 0.001 then
-            part.Size = Vector3.new(0.05, 0.05, dist)
-            part.CFrame = CFrame.lookAt(p1 + (p2 - p1)/2, p2)
-            part.Parent = workspace.CurrentCamera
-        else
-            part.Parent = nil
+    local rootPart = bestTarget.Character:FindFirstChild("HumanoidRootPart")
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local part = bestTarget.Character:FindFirstChild(targetPartName) or rootPart
+    
+    local position = part.Position
+    
+    if Aimbot.Prediction and Aimbot.BulletSpeed > 0 then
+        local distance = (position - workspace.CurrentCamera.CFrame.Position).Magnitude
+        local bulletTravelTime = distance / Aimbot.BulletSpeed
+        position = position + (rootPart.Velocity * bulletTravelTime)
+        if Aimbot.BulletDrop and Aimbot.BulletDropAmount > 0 then
+            local drop = 0.5 * Aimbot.BulletDropAmount * (bulletTravelTime^2)
+            position = Vector3.new(position.X, position.Y + drop, position.Z)
         end
     end
+    
+    PredictionDot.Position = position
+    PredictionDot.Parent = workspace.CurrentCamera
 end
+
 
 -- Main Render/ESP Loop
 mainRenderLoop = RunService.RenderStepped:Connect(function()
-    UpdateVisualizer()
+    UpdatePredictionDot()
 
     local camera = workspace.CurrentCamera
     for _, p in ipairs(Players:GetPlayers()) do
@@ -783,95 +868,6 @@ mainRenderLoop = RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Aimbot Target Functions
-local function GetPlayerDistance(targetPlayer)
-    local targetCharacter = targetPlayer.Character
-    if not targetCharacter then return end
-    local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
-    local Character = Player.Character
-    if not Character then return end
-    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-
-    if not targetHumanoidRootPart or not HumanoidRootPart then return end
-    return (targetHumanoidRootPart.Position - HumanoidRootPart.Position).Magnitude
-end
-
-local function GetMouseDistanceToPlayer(player)
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return math.huge end
-
-    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
-    if screenPoint.Z <= 0 then return math.huge end
-
-    local mouseLoc = UserInputService:GetMouseLocation()
-    local dx = screenPoint.X - mouseLoc.X
-    local dy = screenPoint.Y - mouseLoc.Y
-    return math.sqrt(dx*dx + dy*dy)
-end
-
-local function ValidTargetCheck(player)
-    if player == Player then return false end
-    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
-    local char = player.Character
-    if not char then return false end
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    
-    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local part = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
-    if not part then return false end
-    
-    return IsVisible(part)
-end
-
-local function GetAimbotTarget()
-    local playerList = Players:GetPlayers()
-    local closestPlayer = nil
-    
-    if Aimbot.Filtering == "ClosestToMouse" then
-        local shortestDistance = Aimbot.FOV
-        for _, p in ipairs(playerList) do
-            if ValidTargetCheck(p) then
-                local dist2d = GetMouseDistanceToPlayer(p)
-                if dist2d and dist2d < shortestDistance then
-                    local pDist = GetPlayerDistance(p)
-                    if pDist and pDist <= Aimbot.Range then
-                        shortestDistance = dist2d
-                        closestPlayer = p
-                    end
-                end
-            end
-        end
-    elseif Aimbot.Filtering == "ClosestToPlayer" then
-        local shortestDistance = Aimbot.Range
-        for _, p in ipairs(playerList) do
-            if ValidTargetCheck(p) then
-                local dist = GetPlayerDistance(p)
-                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
-                if dist and dist < shortestDistance and checkFOV then
-                    closestPlayer = p
-                    shortestDistance = dist
-                end
-            end
-        end
-    elseif Aimbot.Filtering == "LowestHealth" then
-        local lowestHealth = math.huge
-        for _, p in ipairs(playerList) do
-            if ValidTargetCheck(p) then
-                local humanoid = p.Character:FindFirstChild("Humanoid")
-                local dist = GetPlayerDistance(p)
-                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
-                if dist and dist <= Aimbot.Range and checkFOV and humanoid.Health < lowestHealth then
-                    closestPlayer = p
-                    lowestHealth = humanoid.Health
-                end
-            end
-        end
-    end
-    
-    return closestPlayer
-end
 
 local function aimbotKeyDown()
     if Aimbot.Enabled == false then return end
