@@ -363,7 +363,7 @@ local function GetCalibrationTargetModel()
     return nearestChar
 end
 
--- SPEED CALIBRATION (Manual Fire & Anti UI-Click Debounce)
+-- SPEED CALIBRATION (Manual Fire & UI Toggle)
 CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon('target', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -377,7 +377,9 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually (5s timeout).", Duration = 5 })
+    -- Hide the UI to allow mouse centering
+    pcall(function() Window:Toggle() end)
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -408,6 +410,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
             Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
             if aimConn then aimConn:Disconnect() end
             CalibrationLock = false
+            pcall(function() Window:Toggle() end) -- Show UI again
             return
         end
 
@@ -436,10 +439,11 @@ CombatGroup:CreateButton({ Name = "Calibrate Speed", Icon = NebulaIcons:GetIcon(
         end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
+        pcall(function() Window:Toggle() end) -- Show UI again
     end)
 end}, "CalibrateSpeed_Button")
 
--- DROP CALIBRATION (Manual Fire & Anti UI-Click Debounce)
+-- DROP CALIBRATION (Manual Fire & UI Toggle)
 CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('arrow-down', 'Lucide'), Style = 1, Callback = function()
     if CalibrationLock then return end
     
@@ -453,7 +457,9 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
     local targetPart = targetChar:FindFirstChild(targetPartName) or targetChar:FindFirstChild("HumanoidRootPart")
     
-    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Fire your weapon manually (5s timeout).", Duration = 5 })
+    -- Hide the UI to allow mouse centering
+    pcall(function() Window:Toggle() end)
+    Starlight:Notification({ Title = "Calibration", Content = "Locked on! Equip a gun and fire manually (5s timeout).", Duration = 5 })
 
     -- Lock Camera
     local aimConn = RunService.RenderStepped:Connect(function()
@@ -484,6 +490,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
             Starlight:Notification({ Title = "Error", Content = "Calibration timed out. You didn't shoot.", Duration = 3 })
             if aimConn then aimConn:Disconnect() end
             CalibrationLock = false
+            pcall(function() Window:Toggle() end) -- Show UI again
             return
         end
 
@@ -512,6 +519,7 @@ CombatGroup:CreateButton({ Name = "Calibrate Drop", Icon = NebulaIcons:GetIcon('
         end
         if aimConn then aimConn:Disconnect() end
         CalibrationLock = false
+        pcall(function() Window:Toggle() end) -- Show UI again
     end)
 end}, "CalibrateDrop_Button")
 
