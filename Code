@@ -23,11 +23,15 @@ local Noclipping = nil
 local ClippingParts = {}
 local CalibrationLock = false
 
+-- Connection Storage for Unloading
+local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
+local inputBeganConn, inputEndedConn, playerAddedConn, playerRemovingConn
+
 -- State Tables
 local Main = {
-    WalkSpeedEnabled = true, WalkSpeed = 16,
-    JumpPowerEnabled = true, JumpPower = 50,
-    NoClipEnabled = false, GravityEnabled = true, Gravity = 196.2
+    WalkSpeedEnabled = false, WalkSpeed = 16,
+    JumpPowerEnabled = false, JumpPower = 50,
+    NoClipEnabled = false, GravityEnabled = false, Gravity = 196.2
 }
 
 local AimbotTargetPart = {
@@ -93,7 +97,7 @@ local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3
 
 -- Character Settings
 CharacterGroupbox:CreateToggle({
-    Name = "WalkSpeed Enabled", CurrentValue = true, Style = 2,
+    Name = "WalkSpeed Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.WalkSpeedEnabled = Value
         if Value then
@@ -115,7 +119,7 @@ CharacterGroupbox:CreateSlider({
 }, "WalkSpeed_Slider")
 
 CharacterGroupbox:CreateToggle({
-    Name = "JumpPower Enabled", CurrentValue = true, Style = 2,
+    Name = "JumpPower Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.JumpPowerEnabled = Value
         if Value then
@@ -162,7 +166,7 @@ CharacterGroupbox:CreateToggle({
 }, "NoClip_Toggle")
 
 EnvironmentGroupbox:CreateToggle({
-    Name = "Gravity Enabled", CurrentValue = true, Style = 2,
+    Name = "Gravity Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.GravityEnabled = Value
         workspace.Gravity = Value and Main.Gravity or 196.2
@@ -207,7 +211,6 @@ FilterLabel:AddDropdown({
     Callback = function(Options) Aimbot.Filtering = AimbotFiltering[Options[1]] end,
 }, "Filtering_Dropdown")
 
--- FIXED: Replaced custom Keybind method with a stable Dropdown
 local KeybindLabel = AimbotSettingsGroupbox:CreateLabel({ Name = "Aimbot Keybind" }, "Aimbot_Keybind_Label")
 KeybindLabel:AddDropdown({
     Options = {"MouseButton2", "MouseButton1", "Q", "E", "F", "C", "V", "LeftAlt"},
@@ -222,26 +225,25 @@ FOVCircle.Filled = false
 FOVCircle.Thickness = 1
 FOVCircle.NumSides = 90
 
-local circleUpdates = nil
 AimbotSettingsGroupbox:CreateToggle({
     Name = "FOV Circle", CurrentValue = true, Style = 2,
     Callback = function(Value)
         Aimbot.FOVCircle = Value
         if Value then
             FOVCircle.Visible = true
-            circleUpdates = RunService.Heartbeat:Connect(function()
+            fovHeartbeat = RunService.Heartbeat:Connect(function()
                 local mouseLoc = UserInputService:GetMouseLocation()
                 FOVCircle.Position = Vector2.new(mouseLoc.X, mouseLoc.Y)
             end)
         else
             FOVCircle.Visible = false
-            if circleUpdates then circleUpdates:Disconnect() circleUpdates = nil end
+            if fovHeartbeat then fovHeartbeat:Disconnect() fovHeartbeat = nil end
         end
     end
 }, "FOVCircle_Toggle")
 
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "FOV", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV or 150,
+    Name = "FOV Radius", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV or 150,
     Callback = function(Value)
         Aimbot.FOV = Value
         if Aimbot.FOVCircle then FOVCircle.Radius = Value end
@@ -249,7 +251,7 @@ AimbotSettingsGroupbox:CreateSlider({
 }, "FOV_Slider")
 
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "Range", Icon = NebulaIcons:GetIcon('binoculars', 'Lucide'), Range = {0, 10000}, Increment = 1, CurrentValue = Aimbot.Range or 1000,
+    Name = "Target Range", Icon = NebulaIcons:GetIcon('binoculars', 'Lucide'), Range = {0, 10000}, Increment = 1, CurrentValue = Aimbot.Range or 1000,
     Callback = function(Value) Aimbot.Range = Value end
 }, "Range_Slider")
 
@@ -301,10 +303,11 @@ local TargetDropdown = TargetDropdownLabel:AddDropdown({
     Callback = function(val) CalibrationTarget = Players:FindFirstChild(val[1] or val) end
 }, "CalibrationTarget_Dropdown")
 
-Players.PlayerAdded:Connect(function(p)
+playerAddedConn = Players.PlayerAdded:Connect(function(p)
     if p ~= Player then table.insert(PlayerList, p.Name); pcall(function() TargetDropdown:SetOptions(PlayerList) end) end
 end)
-Players.PlayerRemoving:Connect(function(p)
+
+playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
     for i, name in ipairs(PlayerList) do 
         if name == p.Name then table.remove(PlayerList, i); pcall(function() TargetDropdown:SetOptions(PlayerList) end); break end 
     end
@@ -402,9 +405,69 @@ ESPSettingsGroupbox:CreateToggle({
 }, "Rainbow_Toggle")
 
 
--- Settings & Configs Tab [FIXED: Utilizing built-in Theme Manager]
+-- Settings & Configs Tab
 SettingsTab:BuildConfigGroupbox(1)
 SettingsTab:BuildThemeGroupbox(2)
+
+local SettingsUtilityGroupbox = SettingsTab:CreateGroupbox({ Name = "Utility", Column = 1 }, "Utility_Groupbox")
+
+local function UnloadScript()
+    -- 1. Restore Character and Environment
+    if Player.Character and Player.Character:FindFirstChild("Humanoid") then
+        Player.Character.Humanoid.WalkSpeed = 16
+        Player.Character.Humanoid.JumpPower = 50
+    end
+    workspace.Gravity = 196.2
+
+    -- 2. Restore Collisions
+    if Noclipping then Noclipping:Disconnect() Noclipping = nil end
+    for _, part in pairs(ClippingParts) do
+        if part and part.Parent then part.CanCollide = true end
+    end
+    ClippingParts = {}
+
+    -- 3. Clear Highlights
+    if espFolder then espFolder:Destroy() end
+
+    -- 4. Destroy Drawing Objects
+    if FOVCircle then
+        FOVCircle.Visible = false
+        FOVCircle:Remove()
+    end
+
+    for _, l in pairs(VisualizerLines) do
+        l.Visible = false
+        l:Remove()
+    end
+
+    for _, obj in pairs(ESPDrawings) do
+        if obj.Tracer then obj.Tracer.Visible = false obj.Tracer:Remove() end
+        if obj.NameText then obj.NameText.Visible = false obj.NameText:Remove() end
+    end
+
+    -- 5. Disconnect all background loops
+    if Aimbotting then Aimbotting:Disconnect() end
+    if rainbowing then rainbowing:Disconnect() end
+    if fovHeartbeat then fovHeartbeat:Disconnect() end
+    if combatHeartbeat then combatHeartbeat:Disconnect() end
+    if noRecoilRender then noRecoilRender:Disconnect() end
+    if mainRenderLoop then mainRenderLoop:Disconnect() end
+    if inputBeganConn then inputBeganConn:Disconnect() end
+    if inputEndedConn then inputEndedConn:Disconnect() end
+    if playerAddedConn then playerAddedConn:Disconnect() end
+    if playerRemovingConn then playerRemovingConn:Disconnect() end
+
+    -- 6. Destroy Starlight UI
+    pcall(function() Window:Destroy() end)
+    pcall(function() Starlight:Unload() end)
+end
+
+SettingsUtilityGroupbox:CreateButton({
+    Name = "Unload Script",
+    Icon = NebulaIcons:GetIcon('trash-2', 'Lucide'),
+    Style = 2,
+    Callback = UnloadScript
+}, "Unload_Button")
 
 
 -- Credits Tab
@@ -471,19 +534,8 @@ local function IsVisible(part)
     return true
 end
 
-Players.PlayerRemoving:Connect(function(player)
-    if ESPDrawings[player] then
-        ESPDrawings[player].Tracer:Remove()
-        ESPDrawings[player].NameText:Remove()
-        ESPDrawings[player] = nil
-    end
-    local hl = espFolder:FindFirstChild(player.Name .. "_ESP")
-    if hl then hl:Destroy() end
-end)
-
-
 -- Combat Background Loops
-RunService.Heartbeat:Connect(function()
+combatHeartbeat = RunService.Heartbeat:Connect(function()
     if Combat.Triggerbot then
         local mouseLoc = UserInputService:GetMouseLocation()
         local ray = workspace.CurrentCamera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
@@ -500,7 +552,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 local LastCameraRotation = workspace.CurrentCamera.CFrame
-RunService.RenderStepped:Connect(function()
+noRecoilRender = RunService.RenderStepped:Connect(function()
     if Combat.NoRecoil then
         if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then 
             workspace.CurrentCamera.CFrame = LastCameraRotation 
@@ -534,7 +586,7 @@ local function UpdateVisualizer()
 end
 
 -- Main Render/ESP Loop
-RunService.RenderStepped:Connect(function()
+mainRenderLoop = RunService.RenderStepped:Connect(function()
     UpdateVisualizer()
 
     local camera = workspace.CurrentCamera
@@ -761,13 +813,13 @@ local function aimbotKeyUp()
     Target = nil
 end
 
-UserInputService.InputBegan:Connect(function(input, gameprocessed)
+inputBeganConn = UserInputService.InputBegan:Connect(function(input, gameprocessed)
     if gameprocessed then return end
     local keyName = (input.UserInputType == Enum.UserInputType.Keyboard) and input.KeyCode.Name or input.UserInputType.Name
     if keyName == Aimbot.Keybind then aimbotKeyDown() end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gameprocessed)
+inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameprocessed)
     local keyName = (input.UserInputType == Enum.UserInputType.Keyboard) and input.KeyCode.Name or input.UserInputType.Name
     if keyName == Aimbot.Keybind then aimbotKeyUp() end
 end)
