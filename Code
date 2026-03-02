@@ -101,13 +101,12 @@ local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
 local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 }, "Socials_Groupbox")
 
--- OPTIMIZED: Local function to safely get humanoid
+-- Helper Functions
 local function GetHumanoid(character)
     if not character then return nil end
     return character:FindFirstChildOfClass("Humanoid")
 end
 
--- OPTIMIZED: Local function to safely get root part
 local function GetRootPart(character)
     if not character then return nil end
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
@@ -118,11 +117,8 @@ CharacterGroupbox:CreateToggle({
     Name = "WalkSpeed Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.WalkSpeedEnabled = Value
-        local char = Player.Character
-        local hum = GetHumanoid(char)
-        if hum then
-            hum.WalkSpeed = Value and Main.WalkSpeed or 16
-        end
+        local hum = GetHumanoid(Player.Character)
+        if hum then hum.WalkSpeed = Value and Main.WalkSpeed or 16 end
     end
 }, "WalkSpeed_Toggle")
 
@@ -157,10 +153,10 @@ CharacterGroupbox:CreateSlider({
     end
 }, "JumpPower_Slider")
 
--- BUGFIX: Properly scoped NoClip with state validation
+-- NoClip with proper state management
 local function UpdateNoClipState()
     if Main.NoClipEnabled then
-        if Noclipping then return end -- Prevent double connection
+        if Noclipping then return end
         ClippingParts = {}
         Noclipping = RunService.Stepped:Connect(function()
             local char = Player.Character
@@ -262,7 +258,7 @@ AimbotSettingsGroupbox:CreateToggle({
             FOVCircle.Visible = true
             fovHeartbeat = RunService.Heartbeat:Connect(function()
                 local mouseLoc = UserInputService:GetMouseLocation()
-                FOVCircle.Position = mouseLoc -- Vector2 auto-converted
+                FOVCircle.Position = mouseLoc
                 FOVCircle.Radius = Aimbot.FOV
             end)
         else
@@ -285,8 +281,12 @@ AimbotSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.Range = Value end
 }, "Range_Slider")
 
+-- FIXED: More responsive smoothness range
 AimbotSettingsGroupbox:CreateSlider({
-    Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), Range = {0.1, 1}, Increment = 0.05, CurrentValue = Aimbot.Smoothness or 0.5,
+    Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), 
+    Range = {0.01, 1}, 
+    Increment = 0.01,
+    CurrentValue = Aimbot.Smoothness or 0.5,
     Callback = function(Value) Aimbot.Smoothness = Value end
 }, "Smoothness_Slider")
 
@@ -368,9 +368,7 @@ SettingsTab:BuildThemeGroupbox(2)
 
 local SettingsUtilityGroupbox = SettingsTab:CreateGroupbox({ Name = "Utility", Column = 1 }, "Utility_Groupbox")
 
--- BUGFIX: Comprehensive cleanup function
 local function UnloadScript()
-    -- Reset character
     local hum = GetHumanoid(Player.Character)
     if hum then
         hum.WalkSpeed = 16
@@ -378,11 +376,9 @@ local function UnloadScript()
     end
     Workspace.Gravity = 196.2
 
-    -- Stop NoClip
     Main.NoClipEnabled = false
     UpdateNoClipState()
 
-    -- Cleanup ESP
     espFolder:ClearAllChildren()
     for player, drawings in pairs(ESPDrawings) do
         if drawings.Tracer then drawings.Tracer:Remove() end
@@ -390,11 +386,9 @@ local function UnloadScript()
         ESPDrawings[player] = nil
     end
 
-    -- Cleanup Drawings
     FOVCircle:Remove()
     PredDotDrawing:Remove()
 
-    -- Disconnect all
     if Aimbotting then Aimbotting:Disconnect() end
     if rainbowing then rainbowing:Disconnect() end
     if fovHeartbeat then fovHeartbeat:Disconnect() end
@@ -438,10 +432,10 @@ SocialsGroupbox:CreateButton({
     Callback = function() setclipboard("https://discord.gg/CSzZPNwUWY") end,
 }, "CopyDiscord_Button")
 
--- OPTIMIZED: Friend cache with TTL (Time To Live) to prevent infinite growth
+-- Friend Cache with TTL
 local friendCache = {}
 local cacheTimestamps = {}
-local CACHE_TTL = 300 -- 5 minutes
+local CACHE_TTL = 300
 
 local function isPlayerFriend(targetPlayer)
     local now = os.clock()
@@ -452,7 +446,6 @@ local function isPlayerFriend(targetPlayer)
         return cached
     end
     
-    -- Async update
     task.spawn(function()
         local success, result = pcall(function() return Player:IsFriendsWith(targetPlayer.UserId) end)
         if success then 
@@ -464,12 +457,11 @@ local function isPlayerFriend(targetPlayer)
     return cached or false
 end
 
--- OPTIMIZED: Cleanup friend cache when players leave
+-- Cleanup on player leave
 playerRemovingConn = Players.PlayerRemoving:Connect(function(targetPlayer)
     friendCache[targetPlayer.UserId] = nil
     cacheTimestamps[targetPlayer.UserId] = nil
     
-    -- Cleanup ESP drawings for leaving player
     local drawings = ESPDrawings[targetPlayer]
     if drawings then
         if drawings.Tracer then drawings.Tracer:Remove() end
@@ -477,7 +469,6 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(targetPlayer)
         ESPDrawings[targetPlayer] = nil
     end
     
-    -- Cleanup highlight
     local highlight = espFolder:FindFirstChild(targetPlayer.Name .. "_ESP")
     if highlight then highlight:Destroy() end
 end)
@@ -516,7 +507,7 @@ local function IsVisible(part)
     return true
 end
 
--- OPTIMIZED: Triggerbot with proper debounce and environment check
+-- Triggerbot
 local triggerbotDebounce = false
 local lastTriggerTime = 0
 
@@ -546,7 +537,6 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     
     if Aimbot.TeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
     
-    -- BUGFIX: Check if mouse functions exist (exploit environment compatibility)
     if mouse1press and mouse1release then
         triggerbotDebounce = true
         lastTriggerTime = now
@@ -560,9 +550,9 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- OPTIMIZED: NoRecoil with stricter delta threshold and frame accumulation
+-- No Recoil
 local lastCameraCFrame = CFrame.new()
-local recoilLockThreshold = 0.01 -- Stricter threshold
+local recoilLockThreshold = 0.01
 local frameAccumulator = 0
 
 noRecoilRender = RunService.RenderStepped:Connect(function(dt)
@@ -571,7 +561,6 @@ noRecoilRender = RunService.RenderStepped:Connect(function(dt)
         return
     end
     
-    -- Allow aimbot to control camera when active
     if Aimbotting then 
         lastCameraCFrame = Workspace.CurrentCamera.CFrame
         return 
@@ -580,13 +569,11 @@ noRecoilRender = RunService.RenderStepped:Connect(function(dt)
     if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         local delta = UserInputService:GetMouseDelta()
         
-        -- BUGFIX: Use magnitude squared for performance, with accumulator for micro-movements
         if delta.Magnitude > recoilLockThreshold then
             lastCameraCFrame = Workspace.CurrentCamera.CFrame
             frameAccumulator = 0
         else
             frameAccumulator += dt
-            -- Only lock after 2 frames of no movement to prevent jitter
             if frameAccumulator > (1/30) then
                 local currentCam = Workspace.CurrentCamera
                 currentCam.CFrame = CFrame.new(currentCam.CFrame.Position) * lastCameraCFrame.Rotation
@@ -598,7 +585,7 @@ noRecoilRender = RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- OPTIMIZED: Distance calculations with nil safety
+-- Distance Functions
 local function GetPlayerDistance(targetPlayer)
     local targetChar = targetPlayer.Character
     local targetRoot = GetRootPart(targetChar)
@@ -622,7 +609,6 @@ local function GetMouseDistanceToPlayer(targetPlayer)
     return math.sqrt(dx*dx + dy*dy)
 end
 
--- OPTIMIZED: Target validation with early exits
 local function ValidTargetCheck(targetPlayer)
     if targetPlayer == Player then return false end
     if Aimbot.TeamCheck and targetPlayer.Team and Player.Team and targetPlayer.Team == Player.Team then return false end
@@ -640,13 +626,12 @@ local function ValidTargetCheck(targetPlayer)
     return IsVisible(part)
 end
 
--- OPTIMIZED: Target acquisition with cached player list and early termination
+-- Target Acquisition
 local playerListCache = {}
 local lastPlayerCacheUpdate = 0
 
 local function GetAimbotTarget()
     local now = tick()
-    -- Update cache every frame max
     if now - lastPlayerCacheUpdate > (1/60) then
         playerListCache = Players:GetPlayers()
         lastPlayerCacheUpdate = now
@@ -701,7 +686,7 @@ local function GetAimbotTarget()
     return bestTarget
 end
 
--- OPTIMIZED: Prediction dot with frame skipping for performance
+-- Prediction Dot
 local lastPredUpdate = 0
 local function UpdatePredictionDot()
     if not Aimbot.Visualizer then 
@@ -709,7 +694,6 @@ local function UpdatePredictionDot()
         return 
     end
 
-    -- Limit to 30fps updates (sufficient for visual feedback)
     local now = tick()
     if now - lastPredUpdate < (1/30) then return end
     lastPredUpdate = now
@@ -761,8 +745,7 @@ local function UpdatePredictionDot()
     end
 end
 
--- OPTIMIZED: ESP Loop using Heartbeat instead of RenderStepped (doesn't need frame sync)
--- Also uses object pooling for highlights to reduce Instance creation
+-- ESP Loop
 local highlightPool = {}
 local function GetPooledHighlight()
     for i, hl in ipairs(highlightPool) do
@@ -777,11 +760,6 @@ local function GetPooledHighlight()
     return hl
 end
 
-local function ReturnHighlightToPool(hl)
-    hl.Adornee = nil
-    table.insert(highlightPool, hl)
-end
-
 espLoop = RunService.Heartbeat:Connect(function()
     pcall(UpdatePredictionDot)
     
@@ -789,37 +767,28 @@ espLoop = RunService.Heartbeat:Connect(function()
     local viewportSize = camera.ViewportSize
     local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y)
     
-    -- Batch process players
     for _, p in ipairs(Players:GetPlayers()) do
         if p == Player then continue end
         
-        -- Lazy init drawings
         if not ESPDrawings[p] then
             ESPDrawings[p] = { 
                 Tracer = Drawing.new("Line"), 
-                NameText = Drawing.new("Text"),
-                Box = Drawing.new("Square") -- Added box ESP
+                NameText = Drawing.new("Text")
             }
-            ESPDrawings[p].Box.Filled = false
-            ESPDrawings[p].Box.Thickness = 1
         end
 
         local drawings = ESPDrawings[p]
         local tracer = drawings.Tracer
         local nameText = drawings.NameText
-        local box = drawings.Box
         
-        -- Default hidden
         tracer.Visible = false
         nameText.Visible = false
-        box.Visible = false
 
         local char = p.Character
         local hum = GetHumanoid(char)
         local hrp = GetRootPart(char)
         
         if not char or not hum or hum.Health <= 0 or not hrp then
-            -- Cleanup highlight if exists
             local existing = espFolder:FindFirstChild(p.Name .. "_ESP")
             if existing then existing:Destroy() end
             continue
@@ -828,7 +797,6 @@ espLoop = RunService.Heartbeat:Connect(function()
         local colorToUse = (Target == p) and Color3.new(1, 0, 0) or getColorForPlayer(p)
         local head = char:FindFirstChild("Head")
         
-        -- ESP Highlight (using pooling)
         if Visuals.ESP then
             local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
             if not espObj then
@@ -840,12 +808,9 @@ espLoop = RunService.Heartbeat:Connect(function()
             espObj.OutlineColor = colorToUse
         else
             local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
-            if espObj then 
-                espObj:Destroy() 
-            end
+            if espObj then espObj:Destroy() end
         end
 
-        -- Tracers (optimized screen position calculation)
         if Visuals.Tracers then
             local screenPos, onScreen = worldToScreen(hrp.Position)
             if onScreen then
@@ -858,7 +823,6 @@ espLoop = RunService.Heartbeat:Connect(function()
             end
         end
 
-        -- Name ESP
         if Visuals.ESP and head then
             local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
             if onScreen then
@@ -877,10 +841,10 @@ espLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- OPTIMIZED: Aimbot logic with delta time smoothing
+-- FIXED: Responsive Aimbot with original smoothing algorithm
 local function aimbotKeyDown()
     if not Aimbot.Enabled then return end
-    if Aimbotting then return end -- Prevent double connection
+    if Aimbotting then return end
 
     Target = GetAimbotTarget()
     if not Target then return end
@@ -891,7 +855,6 @@ local function aimbotKeyDown()
     local camera = Workspace.CurrentCamera
 
     Aimbotting = RunService.RenderStepped:Connect(function(dt)
-        -- Validate target still valid
         if not Target or not Target.Character then
             Aimbotting:Disconnect()
             Aimbotting = nil
@@ -925,7 +888,6 @@ local function aimbotKeyDown()
                     Target.Character:FindFirstChild("UpperTorso") or Target.Character:FindFirstChild("Torso"), 
                     rootPart
                 }
-                -- Filter nils
                 local validParts = {}
                 for _, part in ipairs(parts) do
                     if part then table.insert(validParts, part) end
@@ -935,7 +897,6 @@ local function aimbotKeyDown()
             position = currentPart.Position
         end
 
-        -- Prediction math
         if Aimbot.Prediction and Aimbot.BulletSpeed > 0 then
             local distance = (position - camera.CFrame.Position).Magnitude
             local bulletTravelTime = distance / Aimbot.BulletSpeed
@@ -951,10 +912,9 @@ local function aimbotKeyDown()
             end
         end
 
-        -- Smooth aim with proper delta time
+        -- FIXED: Original responsive smoothing algorithm
         local newCFrame = CFrame.lookAt(camera.CFrame.Position, position)
-        -- OPTIMIZED: Exponential decay smoothing for consistent feel at all framerates
-        local alpha = 1 - math.exp(-Aimbot.Smoothness * dt * 10)
+        local alpha = 1 - math.pow(1 - Aimbot.Smoothness, dt * 60)
         camera.CFrame = camera.CFrame:Lerp(newCFrame, math.clamp(alpha, 0, 1))
     end)
 end
@@ -978,23 +938,14 @@ inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameprocess
     if keyName == Aimbot.Keybind then aimbotKeyUp() end
 end)
 
--- OPTIMIZED: Handle character respawns for walk speed/jump power
+-- Handle respawns
 characterAddedConn = Player.CharacterAdded:Connect(function(char)
-    task.wait(0.1) -- Wait for humanoid to load
+    task.wait(0.1)
     local hum = GetHumanoid(char)
     if not hum then return end
     
-    if Main.WalkSpeedEnabled then
-        hum.WalkSpeed = Main.WalkSpeed
-    end
-    if Main.JumpPowerEnabled then
-        hum.JumpPower = Main.JumpPower
-    end
-    
-    -- Reapply noclip if enabled
-    if Main.NoClipEnabled then
-        -- NoClip loop will catch new parts automatically
-    end
+    if Main.WalkSpeedEnabled then hum.WalkSpeed = Main.WalkSpeed end
+    if Main.JumpPowerEnabled then hum.JumpPower = Main.JumpPower end
 end)
 
 Starlight:LoadAutoloadConfig()
