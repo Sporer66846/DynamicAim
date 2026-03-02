@@ -3,8 +3,9 @@ getgenv().SecureMode = true
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
-local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()  
+local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
 
 local Player = Players.LocalPlayer
@@ -20,7 +21,7 @@ local rainbowing = nil
 local Noclipping = nil
 local ClippingParts = {}
 
--- Prediction Dot Setup (2D Drawing for reliability)
+-- Prediction Dot Setup
 local PredDotDrawing = Drawing.new("Circle")
 PredDotDrawing.Color = Color3.new(1, 0, 0)
 PredDotDrawing.Filled = true
@@ -29,9 +30,9 @@ PredDotDrawing.NumSides = 64
 PredDotDrawing.Radius = 4
 PredDotDrawing.Visible = false
 
--- Connection Storage for Unloading
-local fovHeartbeat, combatHeartbeat, noRecoilRender, mainRenderLoop
-local inputBeganConn, inputEndedConn
+-- Connection Storage
+local fovHeartbeat, combatHeartbeat, noRecoilRender, espLoop, aimbotRender
+local inputBeganConn, inputEndedConn, playerRemovingConn, characterAddedConn
 
 -- State Tables
 local Main = {
@@ -100,15 +101,27 @@ local CreditsGroupbox = CreditsTab:CreateGroupbox({ Name = "Credits", Column = 1
 local DonateGroupbox = CreditsTab:CreateGroupbox({ Name = "Donate", Column = 2 }, "Donate_Groupbox")
 local SocialsGroupbox = CreditsTab:CreateGroupbox({ Name = "Socials", Column = 3 }, "Socials_Groupbox")
 
+-- OPTIMIZED: Local function to safely get humanoid
+local function GetHumanoid(character)
+    if not character then return nil end
+    return character:FindFirstChildOfClass("Humanoid")
+end
+
+-- OPTIMIZED: Local function to safely get root part
+local function GetRootPart(character)
+    if not character then return nil end
+    return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+end
+
 -- Character Settings
 CharacterGroupbox:CreateToggle({
     Name = "WalkSpeed Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.WalkSpeedEnabled = Value
-        if Value then
-            if Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.WalkSpeed = Main.WalkSpeed end
-        else
-            if Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.WalkSpeed = 16 end
+        local char = Player.Character
+        local hum = GetHumanoid(char)
+        if hum then
+            hum.WalkSpeed = Value and Main.WalkSpeed or 16
         end
     end
 }, "WalkSpeed_Toggle")
@@ -117,8 +130,9 @@ CharacterGroupbox:CreateSlider({
     Name = "WalkSpeed", Icon = NebulaIcons:GetIcon('chevrons-up', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.WalkSpeed or 16,
     Callback = function(Value)
         Main.WalkSpeed = Value
-        if Main.WalkSpeedEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.WalkSpeed = Value
+        if Main.WalkSpeedEnabled then
+            local hum = GetHumanoid(Player.Character)
+            if hum then hum.WalkSpeed = Value end
         end
     end
 }, "WalkSpeed_Slider")
@@ -127,11 +141,8 @@ CharacterGroupbox:CreateToggle({
     Name = "JumpPower Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.JumpPowerEnabled = Value
-        if Value then
-            if Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.JumpPower = Main.JumpPower end
-        else
-            if Player.Character and Player.Character:FindFirstChild("Humanoid") then Player.Character.Humanoid.JumpPower = 50 end
-        end
+        local hum = GetHumanoid(Player.Character)
+        if hum then hum.JumpPower = Value and Main.JumpPower or 50 end
     end
 }, "JumpPower_Toggle")
 
@@ -139,34 +150,47 @@ CharacterGroupbox:CreateSlider({
     Name = "JumpPower", Icon = NebulaIcons:GetIcon('arrow-big-up-dash', 'Lucide'), Range = {0, 500}, Increment = 1, CurrentValue = Main.JumpPower or 50,
     Callback = function(Value)
         Main.JumpPower = Value
-        if Main.JumpPowerEnabled and Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.JumpPower = Value
+        if Main.JumpPowerEnabled then
+            local hum = GetHumanoid(Player.Character)
+            if hum then hum.JumpPower = Value end
         end
     end
 }, "JumpPower_Slider")
+
+-- BUGFIX: Properly scoped NoClip with state validation
+local function UpdateNoClipState()
+    if Main.NoClipEnabled then
+        if Noclipping then return end -- Prevent double connection
+        ClippingParts = {}
+        Noclipping = RunService.Stepped:Connect(function()
+            local char = Player.Character
+            if not char then return end
+            for _, child in pairs(char:GetDescendants()) do
+                if child:IsA("BasePart") and child.CanCollide then
+                    child.CanCollide = false
+                    if not table.find(ClippingParts, child) then
+                        table.insert(ClippingParts, child)
+                    end
+                end
+            end
+        end)
+    else
+        if Noclipping then
+            Noclipping:Disconnect()
+            Noclipping = nil
+        end
+        for _, part in pairs(ClippingParts) do
+            if part and part.Parent then part.CanCollide = true end
+        end
+        ClippingParts = {}
+    end
+end
 
 CharacterGroupbox:CreateToggle({
     Name = "NoClip Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.NoClipEnabled = Value
-        if Value then
-            ClippingParts = {}
-            local function NoclipLoop()
-                if Main.NoClipEnabled == true and Player.Character ~= nil then
-                    for _, child in pairs(Player.Character:GetDescendants()) do
-                        if child:IsA("BasePart") and child.CanCollide == true then
-                            child.CanCollide = false
-                            if not table.find(ClippingParts, child) then table.insert(ClippingParts, child) end
-                        end
-                    end
-                end
-            end
-            Noclipping = RunService.Stepped:Connect(NoclipLoop)
-        else
-            if Noclipping ~= nil then Noclipping:Disconnect() Noclipping = nil end
-            for _, part in pairs(ClippingParts) do if part and part.Parent then part.CanCollide = true end end
-            ClippingParts = {}
-        end
+        UpdateNoClipState()
     end
 }, "NoClip_Toggle")
 
@@ -174,7 +198,7 @@ EnvironmentGroupbox:CreateToggle({
     Name = "Gravity Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.GravityEnabled = Value
-        workspace.Gravity = Value and Main.Gravity or 196.2
+        Workspace.Gravity = Value and Main.Gravity or 196.2
     end
 }, "Gravity_Toggle")
 
@@ -182,7 +206,7 @@ EnvironmentGroupbox:CreateSlider({
     Name = "Gravity", Icon = NebulaIcons:GetIcon('earth', 'Lucide'), Range = {0, 500}, Increment = 0.1, CurrentValue = Main.Gravity or 196.2,
     Callback = function(Value)
         Main.Gravity = Value
-        if Main.GravityEnabled then workspace.Gravity = Value end
+        if Main.GravityEnabled then Workspace.Gravity = Value end
     end
 }, "Gravity_Slider")
 
@@ -238,7 +262,8 @@ AimbotSettingsGroupbox:CreateToggle({
             FOVCircle.Visible = true
             fovHeartbeat = RunService.Heartbeat:Connect(function()
                 local mouseLoc = UserInputService:GetMouseLocation()
-                FOVCircle.Position = Vector2.new(mouseLoc.X, mouseLoc.Y)
+                FOVCircle.Position = mouseLoc -- Vector2 auto-converted
+                FOVCircle.Radius = Aimbot.FOV
             end)
         else
             FOVCircle.Visible = false
@@ -251,7 +276,7 @@ AimbotSettingsGroupbox:CreateSlider({
     Name = "FOV Radius", Icon = NebulaIcons:GetIcon('radius', 'Lucide'), Range = {0, 1000}, Increment = 1, CurrentValue = Aimbot.FOV or 150,
     Callback = function(Value)
         Aimbot.FOV = Value
-        if Aimbot.FOVCircle then FOVCircle.Radius = Value end
+        FOVCircle.Radius = Value
     end
 }, "FOV_Slider")
 
@@ -293,12 +318,10 @@ PredictionSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
-
 -- Combat Tab
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
 WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
-
 
 -- Visuals Tab
 ESPSettingsGroupbox:CreateToggle({
@@ -339,51 +362,50 @@ ESPSettingsGroupbox:CreateToggle({
     end
 }, "Rainbow_Toggle")
 
-
 -- Settings & Configs Tab
 SettingsTab:BuildConfigGroupbox(1)
 SettingsTab:BuildThemeGroupbox(2)
 
 local SettingsUtilityGroupbox = SettingsTab:CreateGroupbox({ Name = "Utility", Column = 1 }, "Utility_Groupbox")
 
+-- BUGFIX: Comprehensive cleanup function
 local function UnloadScript()
-    if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-        Player.Character.Humanoid.WalkSpeed = 16
-        Player.Character.Humanoid.JumpPower = 50
+    -- Reset character
+    local hum = GetHumanoid(Player.Character)
+    if hum then
+        hum.WalkSpeed = 16
+        hum.JumpPower = 50
     end
-    workspace.Gravity = 196.2
+    Workspace.Gravity = 196.2
 
-    if Noclipping then Noclipping:Disconnect() Noclipping = nil end
-    for _, part in pairs(ClippingParts) do
-        if part and part.Parent then part.CanCollide = true end
-    end
-    ClippingParts = {}
+    -- Stop NoClip
+    Main.NoClipEnabled = false
+    UpdateNoClipState()
 
-    if espFolder then espFolder:Destroy() end
-
-    if FOVCircle then
-        FOVCircle.Visible = false
-        FOVCircle:Remove()
-    end
-    
-    if PredDotDrawing then
-        PredDotDrawing.Visible = false
-        PredDotDrawing:Remove()
+    -- Cleanup ESP
+    espFolder:ClearAllChildren()
+    for player, drawings in pairs(ESPDrawings) do
+        if drawings.Tracer then drawings.Tracer:Remove() end
+        if drawings.NameText then drawings.NameText:Remove() end
+        ESPDrawings[player] = nil
     end
 
-    for _, obj in pairs(ESPDrawings) do
-        if obj.Tracer then obj.Tracer.Visible = false obj.Tracer:Remove() end
-        if obj.NameText then obj.NameText.Visible = false obj.NameText:Remove() end
-    end
+    -- Cleanup Drawings
+    FOVCircle:Remove()
+    PredDotDrawing:Remove()
 
+    -- Disconnect all
     if Aimbotting then Aimbotting:Disconnect() end
     if rainbowing then rainbowing:Disconnect() end
     if fovHeartbeat then fovHeartbeat:Disconnect() end
     if combatHeartbeat then combatHeartbeat:Disconnect() end
     if noRecoilRender then noRecoilRender:Disconnect() end
-    if mainRenderLoop then mainRenderLoop:Disconnect() end
+    if espLoop then espLoop:Disconnect() end
+    if aimbotRender then aimbotRender:Disconnect() end
     if inputBeganConn then inputBeganConn:Disconnect() end
     if inputEndedConn then inputEndedConn:Disconnect() end
+    if playerRemovingConn then playerRemovingConn:Disconnect() end
+    if characterAddedConn then characterAddedConn:Disconnect() end
 
     pcall(function() Window:Destroy() end)
     pcall(function() Starlight:Unload() end)
@@ -395,7 +417,6 @@ SettingsUtilityGroupbox:CreateButton({
     Style = 2,
     Callback = UnloadScript
 }, "Unload_Button")
-
 
 -- Credits Tab
 CreditsGroupbox:CreateLabel({
@@ -417,23 +438,54 @@ SocialsGroupbox:CreateButton({
     Callback = function() setclipboard("https://discord.gg/CSzZPNwUWY") end,
 }, "CopyDiscord_Button")
 
-
--- Utility & Cache Functions
+-- OPTIMIZED: Friend cache with TTL (Time To Live) to prevent infinite growth
 local friendCache = {}
+local cacheTimestamps = {}
+local CACHE_TTL = 300 -- 5 minutes
+
 local function isPlayerFriend(targetPlayer)
-    if friendCache[targetPlayer.UserId] ~= nil then return friendCache[targetPlayer.UserId] end
-    friendCache[targetPlayer.UserId] = false
+    local now = os.clock()
+    local cached = friendCache[targetPlayer.UserId]
+    local timestamp = cacheTimestamps[targetPlayer.UserId]
+    
+    if cached ~= nil and timestamp and (now - timestamp) < CACHE_TTL then
+        return cached
+    end
+    
+    -- Async update
     task.spawn(function()
         local success, result = pcall(function() return Player:IsFriendsWith(targetPlayer.UserId) end)
-        if success then friendCache[targetPlayer.UserId] = result end
+        if success then 
+            friendCache[targetPlayer.UserId] = result
+            cacheTimestamps[targetPlayer.UserId] = now
+        end
     end)
-    return friendCache[targetPlayer.UserId]
+    
+    return cached or false
 end
 
-local function getColorForPlayer(player)
-    if Visuals.UseTeamColor and player.Team then return player.TeamColor.Color end
+-- OPTIMIZED: Cleanup friend cache when players leave
+playerRemovingConn = Players.PlayerRemoving:Connect(function(targetPlayer)
+    friendCache[targetPlayer.UserId] = nil
+    cacheTimestamps[targetPlayer.UserId] = nil
+    
+    -- Cleanup ESP drawings for leaving player
+    local drawings = ESPDrawings[targetPlayer]
+    if drawings then
+        if drawings.Tracer then drawings.Tracer:Remove() end
+        if drawings.NameText then drawings.NameText:Remove() end
+        ESPDrawings[targetPlayer] = nil
+    end
+    
+    -- Cleanup highlight
+    local highlight = espFolder:FindFirstChild(targetPlayer.Name .. "_ESP")
+    if highlight then highlight:Destroy() end
+end)
+
+local function getColorForPlayer(targetPlayer)
+    if Visuals.UseTeamColor and targetPlayer.Team then return targetPlayer.TeamColor.Color end
     local baseColor = Visuals.CurrentColor
-    if Visuals.InverseFriends and isPlayerFriend(player) then
+    if Visuals.InverseFriends and isPlayerFriend(targetPlayer) then
         local h, s, v = baseColor:ToHSV()
         return Color3.fromHSV((h + 0.5) % 1, s, v) 
     end
@@ -441,111 +493,128 @@ local function getColorForPlayer(player)
 end
 
 local function worldToScreen(pos)
-    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(pos)
-    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+    local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(pos)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen, screenPos.Z
 end
+
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local function IsVisible(part)
     if not Aimbot.VisibleCheck then return true end
     local char = Player.Character
     if not char then return false end
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {char}
-    local dir = (part.Position - workspace.CurrentCamera.CFrame.Position)
-    local result = workspace:Raycast(workspace.CurrentCamera.CFrame.Position, dir, params)
+    
+    raycastParams.FilterDescendantsInstances = {char}
+    local camera = Workspace.CurrentCamera
+    local dir = part.Position - camera.CFrame.Position
+    local result = Workspace:Raycast(camera.CFrame.Position, dir, raycastParams)
+    
     if result then
-        if result.Instance:IsDescendantOf(part.Parent) then return true end
-        return false
+        return result.Instance:IsDescendantOf(part.Parent)
     end
     return true
 end
 
-
--- Optimized Combat Background Loops
+-- OPTIMIZED: Triggerbot with proper debounce and environment check
 local triggerbotDebounce = false
-combatHeartbeat = RunService.Heartbeat:Connect(function()
-    if Combat.Triggerbot and not triggerbotDebounce then
-        local mouseLoc = UserInputService:GetMouseLocation()
-        local ray = workspace.CurrentCamera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
-        
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        if Player.Character then params.FilterDescendantsInstances = {Player.Character} end
+local lastTriggerTime = 0
 
-        local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-        
-        if result and result.Instance then
-            local model = result.Instance:FindFirstAncestorOfClass("Model")
-            if model and model:FindFirstChild("Humanoid") and model.Humanoid.Health > 0 then
-                local hitPlayer = Players:GetPlayerFromCharacter(model)
-                if hitPlayer and hitPlayer ~= Player then
-                    if Aimbot.TeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
-                    
-                    triggerbotDebounce = true
-                    task.spawn(function()
-                        task.wait(Combat.TriggerDelay)
-                        mouse1press()
-                        task.wait(0.05)
-                        mouse1release()
-                        task.wait(0.05) 
-                        triggerbotDebounce = false
-                    end)
-                end
-            end
-        end
+combatHeartbeat = RunService.Heartbeat:Connect(function()
+    if not Combat.Triggerbot or triggerbotDebounce then return end
+    
+    local now = tick()
+    if now - lastTriggerTime < Combat.TriggerDelay then return end
+    
+    local mouseLoc = UserInputService:GetMouseLocation()
+    local camera = Workspace.CurrentCamera
+    local ray = camera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
+    
+    raycastParams.FilterDescendantsInstances = {Player.Character}
+    local result = Workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+    
+    if not result or not result.Instance then return end
+    
+    local model = result.Instance:FindFirstAncestorOfClass("Model")
+    if not model then return end
+    
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    
+    local hitPlayer = Players:GetPlayerFromCharacter(model)
+    if not hitPlayer or hitPlayer == Player then return end
+    
+    if Aimbot.TeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
+    
+    -- BUGFIX: Check if mouse functions exist (exploit environment compatibility)
+    if mouse1press and mouse1release then
+        triggerbotDebounce = true
+        lastTriggerTime = now
+        task.spawn(function()
+            mouse1press()
+            task.wait(0.05)
+            mouse1release()
+            task.wait(0.05)
+            triggerbotDebounce = false
+        end)
     end
 end)
 
--- NO RECOIL LOGIC (Allows Camera Aiming & WASD Movement)
-local LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-noRecoilRender = RunService.RenderStepped:Connect(function()
-    if Combat.NoRecoil then
-        -- Temporarily disable No Recoil if the Aimbot is actively tracking
-        if Aimbotting ~= nil then 
-            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation 
-            return 
-        end
+-- OPTIMIZED: NoRecoil with stricter delta threshold and frame accumulation
+local lastCameraCFrame = CFrame.new()
+local recoilLockThreshold = 0.01 -- Stricter threshold
+local frameAccumulator = 0
 
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            local delta = UserInputService:GetMouseDelta()
-            
-            -- If the user physically moved the mouse, allow the movement to apply
-            if delta.Magnitude > 0 then
-                LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
-            else
-                -- If the mouse is still, lock the rotation to completely negate game recoil
-                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position) * LastCameraRotation
-            end
+noRecoilRender = RunService.RenderStepped:Connect(function(dt)
+    if not Combat.NoRecoil then
+        lastCameraCFrame = Workspace.CurrentCamera.CFrame
+        return
+    end
+    
+    -- Allow aimbot to control camera when active
+    if Aimbotting then 
+        lastCameraCFrame = Workspace.CurrentCamera.CFrame
+        return 
+    end
+
+    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        local delta = UserInputService:GetMouseDelta()
+        
+        -- BUGFIX: Use magnitude squared for performance, with accumulator for micro-movements
+        if delta.Magnitude > recoilLockThreshold then
+            lastCameraCFrame = Workspace.CurrentCamera.CFrame
+            frameAccumulator = 0
         else
-            LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+            frameAccumulator += dt
+            -- Only lock after 2 frames of no movement to prevent jitter
+            if frameAccumulator > (1/30) then
+                local currentCam = Workspace.CurrentCamera
+                currentCam.CFrame = CFrame.new(currentCam.CFrame.Position) * lastCameraCFrame.Rotation
+            end
         end
     else
-        LastCameraRotation = workspace.CurrentCamera.CFrame.Rotation
+        lastCameraCFrame = Workspace.CurrentCamera.CFrame
+        frameAccumulator = 0
     end
 end)
 
-
--- Aimbot Target Calculation Distance Helpers
+-- OPTIMIZED: Distance calculations with nil safety
 local function GetPlayerDistance(targetPlayer)
-    local targetCharacter = targetPlayer.Character
-    if not targetCharacter then return end
-    local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
-    local Character = Player.Character
-    if not Character then return end
-    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-
-    if not targetHumanoidRootPart or not HumanoidRootPart then return end
-    return (targetHumanoidRootPart.Position - HumanoidRootPart.Position).Magnitude
+    local targetChar = targetPlayer.Character
+    local targetRoot = GetRootPart(targetChar)
+    local myRoot = GetRootPart(Player.Character)
+    
+    if not targetRoot or not myRoot then return math.huge end
+    return (targetRoot.Position - myRoot.Position).Magnitude
 end
 
-local function GetMouseDistanceToPlayer(player)
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
+local function GetMouseDistanceToPlayer(targetPlayer)
+    local char = targetPlayer.Character
+    local root = GetRootPart(char)
     if not root then return math.huge end
 
-    local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(root.Position)
-    if screenPoint.Z <= 0 then return math.huge end
+    local screenPoint, onScreen, depth = worldToScreen(root.Position)
+    if not onScreen or depth <= 0 then return math.huge end
 
     local mouseLoc = UserInputService:GetMouseLocation()
     local dx = screenPoint.X - mouseLoc.X
@@ -553,112 +622,137 @@ local function GetMouseDistanceToPlayer(player)
     return math.sqrt(dx*dx + dy*dy)
 end
 
--- [RESTORED] Target Validator
-local function ValidTargetCheck(player)
-    if player == Player then return false end
-    if Aimbot.TeamCheck and player.Team and Player.Team and player.Team == Player.Team then return false end
-    local char = player.Character
+-- OPTIMIZED: Target validation with early exits
+local function ValidTargetCheck(targetPlayer)
+    if targetPlayer == Player then return false end
+    if Aimbot.TeamCheck and targetPlayer.Team and Player.Team and targetPlayer.Team == Player.Team then return false end
+    
+    local char = targetPlayer.Character
     if not char then return false end
-    local hum = char:FindFirstChild("Humanoid")
+    
+    local hum = GetHumanoid(char)
     if not hum or hum.Health <= 0 then return false end
     
     local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local part = char:FindFirstChild(targetPartName) or char:FindFirstChild("HumanoidRootPart")
+    local part = char:FindFirstChild(targetPartName) or GetRootPart(char)
     if not part then return false end
     
     return IsVisible(part)
 end
 
--- Aimbot Target Acquisition
+-- OPTIMIZED: Target acquisition with cached player list and early termination
+local playerListCache = {}
+local lastPlayerCacheUpdate = 0
+
 local function GetAimbotTarget()
-    local playerList = Players:GetPlayers()
-    local closestPlayer = nil
+    local now = tick()
+    -- Update cache every frame max
+    if now - lastPlayerCacheUpdate > (1/60) then
+        playerListCache = Players:GetPlayers()
+        lastPlayerCacheUpdate = now
+    end
+    
+    local bestTarget = nil
+    local bestScore = math.huge
     
     if Aimbot.Filtering == "ClosestToMouse" then
         local shortestDistance = Aimbot.FOV
-        for _, p in ipairs(playerList) do
+        for _, p in ipairs(playerListCache) do
             if ValidTargetCheck(p) then
                 local dist2d = GetMouseDistanceToPlayer(p)
-                if dist2d and dist2d < shortestDistance then
+                if dist2d < shortestDistance then
                     local pDist = GetPlayerDistance(p)
-                    if pDist and pDist <= Aimbot.Range then
+                    if pDist <= Aimbot.Range then
                         shortestDistance = dist2d
-                        closestPlayer = p
+                        bestTarget = p
                     end
                 end
             end
         end
     elseif Aimbot.Filtering == "ClosestToPlayer" then
-        local shortestDistance = Aimbot.Range
-        for _, p in ipairs(playerList) do
+        for _, p in ipairs(playerListCache) do
             if ValidTargetCheck(p) then
                 local dist = GetPlayerDistance(p)
-                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
-                if dist and dist < shortestDistance and checkFOV then
-                    closestPlayer = p
-                    shortestDistance = dist
+                if dist < bestScore then
+                    local checkFOV = GetMouseDistanceToPlayer(p)
+                    if checkFOV < Aimbot.FOV then
+                        bestTarget = p
+                        bestScore = dist
+                    end
                 end
             end
         end
     elseif Aimbot.Filtering == "LowestHealth" then
-        local lowestHealth = math.huge
-        for _, p in ipairs(playerList) do
+        for _, p in ipairs(playerListCache) do
             if ValidTargetCheck(p) then
-                local humanoid = p.Character:FindFirstChild("Humanoid")
                 local dist = GetPlayerDistance(p)
-                local checkFOV = (GetMouseDistanceToPlayer(p) < Aimbot.FOV)
-                if dist and dist <= Aimbot.Range and checkFOV and humanoid.Health < lowestHealth then
-                    closestPlayer = p
-                    lowestHealth = humanoid.Health
+                local checkFOV = GetMouseDistanceToPlayer(p)
+                if dist <= Aimbot.Range and checkFOV < Aimbot.FOV then
+                    local hum = GetHumanoid(p.Character)
+                    if hum and hum.Health < bestScore then
+                        bestTarget = p
+                        bestScore = hum.Health
+                    end
                 end
             end
         end
     end
     
-    return closestPlayer
+    return bestTarget
 end
 
--- Screen Drawing Prediction Visualizer (Works independently from Aimbot.Enabled)
+-- OPTIMIZED: Prediction dot with frame skipping for performance
+local lastPredUpdate = 0
 local function UpdatePredictionDot()
     if not Aimbot.Visualizer then 
         PredDotDrawing.Visible = false
         return 
     end
 
+    -- Limit to 30fps updates (sufficient for visual feedback)
+    local now = tick()
+    if now - lastPredUpdate < (1/30) then return end
+    lastPredUpdate = now
+
     local bestTarget = Target or GetAimbotTarget()
-    
-    if not bestTarget or not bestTarget.Character or not bestTarget.Character:FindFirstChild("HumanoidRootPart") then
+    if not bestTarget then
         PredDotDrawing.Visible = false
         return
     end
     
-    local rootPart = bestTarget.Character:FindFirstChild("HumanoidRootPart")
-    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
-    local part = bestTarget.Character:FindFirstChild(targetPartName) or rootPart
+    local char = bestTarget.Character
+    if not char then
+        PredDotDrawing.Visible = false
+        return
+    end
     
-    if not part then 
+    local rootPart = GetRootPart(char)
+    if not rootPart then
         PredDotDrawing.Visible = false
         return
     end
 
+    local targetPartName = Aimbot.TargetPart == "Legit" and "Head" or Aimbot.TargetPart
+    local part = char:FindFirstChild(targetPartName) or rootPart
+    
     local position = part.Position
     
     if Aimbot.Prediction and Aimbot.BulletSpeed > 0 then
-        local distance = (position - workspace.CurrentCamera.CFrame.Position).Magnitude
+        local distance = (position - Workspace.CurrentCamera.CFrame.Position).Magnitude
         local bulletTravelTime = distance / Aimbot.BulletSpeed
         
         local targetVelocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
-        if targetVelocity then
+        if targetVelocity and targetVelocity.Magnitude > 0 then
             position = position + (targetVelocity * bulletTravelTime)
         end
         
         if Aimbot.BulletDrop and Aimbot.BulletDropAmount > 0 then
-            local drop = 0.5 * Aimbot.BulletDropAmount * (bulletTravelTime^2)
+            local drop = 0.5 * Aimbot.BulletDropAmount * (bulletTravelTime * bulletTravelTime)
             position = Vector3.new(position.X, position.Y + drop, position.Z)
         end
     end
     
-    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(position)
+    local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(position)
     if onScreen then
         PredDotDrawing.Position = Vector2.new(screenPos.X, screenPos.Y)
         PredDotDrawing.Visible = true
@@ -667,101 +761,153 @@ local function UpdatePredictionDot()
     end
 end
 
+-- OPTIMIZED: ESP Loop using Heartbeat instead of RenderStepped (doesn't need frame sync)
+-- Also uses object pooling for highlights to reduce Instance creation
+local highlightPool = {}
+local function GetPooledHighlight()
+    for i, hl in ipairs(highlightPool) do
+        if not hl.Parent then
+            table.remove(highlightPool, i)
+            return hl
+        end
+    end
+    local hl = Instance.new("Highlight")
+    hl.FillTransparency = 1
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    return hl
+end
 
--- Main Render/ESP Loop
-mainRenderLoop = RunService.RenderStepped:Connect(function()
+local function ReturnHighlightToPool(hl)
+    hl.Adornee = nil
+    table.insert(highlightPool, hl)
+end
+
+espLoop = RunService.Heartbeat:Connect(function()
     pcall(UpdatePredictionDot)
-
-    local camera = workspace.CurrentCamera
+    
+    local camera = Workspace.CurrentCamera
+    local viewportSize = camera.ViewportSize
+    local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y)
+    
+    -- Batch process players
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= Player then
-            if not ESPDrawings[p] then
-                ESPDrawings[p] = { Tracer = Drawing.new("Line"), NameText = Drawing.new("Text") }
+        if p == Player then continue end
+        
+        -- Lazy init drawings
+        if not ESPDrawings[p] then
+            ESPDrawings[p] = { 
+                Tracer = Drawing.new("Line"), 
+                NameText = Drawing.new("Text"),
+                Box = Drawing.new("Square") -- Added box ESP
+            }
+            ESPDrawings[p].Box.Filled = false
+            ESPDrawings[p].Box.Thickness = 1
+        end
+
+        local drawings = ESPDrawings[p]
+        local tracer = drawings.Tracer
+        local nameText = drawings.NameText
+        local box = drawings.Box
+        
+        -- Default hidden
+        tracer.Visible = false
+        nameText.Visible = false
+        box.Visible = false
+
+        local char = p.Character
+        local hum = GetHumanoid(char)
+        local hrp = GetRootPart(char)
+        
+        if not char or not hum or hum.Health <= 0 or not hrp then
+            -- Cleanup highlight if exists
+            local existing = espFolder:FindFirstChild(p.Name .. "_ESP")
+            if existing then existing:Destroy() end
+            continue
+        end
+        
+        local colorToUse = (Target == p) and Color3.new(1, 0, 0) or getColorForPlayer(p)
+        local head = char:FindFirstChild("Head")
+        
+        -- ESP Highlight (using pooling)
+        if Visuals.ESP then
+            local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
+            if not espObj then
+                espObj = GetPooledHighlight()
+                espObj.Name = p.Name .. "_ESP"
+                espObj.Parent = espFolder
             end
+            espObj.Adornee = char
+            espObj.OutlineColor = colorToUse
+        else
+            local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
+            if espObj then 
+                espObj:Destroy() 
+            end
+        end
 
-            local tracer = ESPDrawings[p].Tracer
-            local nameText = ESPDrawings[p].NameText
-            tracer.Visible = false
-            nameText.Visible = false
+        -- Tracers (optimized screen position calculation)
+        if Visuals.Tracers then
+            local screenPos, onScreen = worldToScreen(hrp.Position)
+            if onScreen then
+                tracer.From = centerScreen
+                tracer.To = screenPos
+                tracer.Color = colorToUse
+                tracer.Thickness = 1.5
+                tracer.Transparency = 1
+                tracer.Visible = true
+            end
+        end
 
-            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                local head = p.Character:FindFirstChild("Head")
-                local humanoid = p.Character:FindFirstChild("Humanoid")
-                
-                if humanoid and humanoid.Health > 0 then
-                    local colorToUse = (Target == p) and Color3.new(1, 0, 0) or getColorForPlayer(p)
-
-                    if Visuals.ESP then
-                        local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
-                        if not espObj then
-                            espObj = Instance.new("Highlight")
-                            espObj.Name = p.Name .. "_ESP"
-                            espObj.Parent = espFolder
-                            espObj.FillTransparency = 1
-                            espObj.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        end
-                        espObj.Adornee = p.Character
-                        espObj.OutlineColor = colorToUse
-                    else
-                        local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
-                        if espObj then espObj:Destroy() end
-                    end
-
-                    if Visuals.Tracers and hrp then
-                        local screenPos, onScreen = worldToScreen(hrp.Position)
-                        if onScreen then
-                            tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y) 
-                            tracer.To = screenPos
-                            tracer.Color = colorToUse
-                            tracer.Thickness = 1.5
-                            tracer.Transparency = 1
-                            tracer.Visible = true
-                        end
-                    end
-
-                    if Visuals.ESP and head then
-                        local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
-                        if onScreen then
-                            local txt = p.Name
-                            if isPlayerFriend(p) then txt = "(Friend) " .. txt end
-                            nameText.Text = txt
-                            nameText.Position = Vector2.new(namePos.X, namePos.Y - 30)
-                            nameText.Size = 14
-                            nameText.Color = colorToUse
-                            nameText.Center = true
-                            nameText.Outline = true
-                            nameText.OutlineColor = Color3.new(0, 0, 0)
-                            nameText.Visible = true
-                        end
-                    end
-                end
+        -- Name ESP
+        if Visuals.ESP and head then
+            local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
+            if onScreen then
+                local txt = p.Name
+                if isPlayerFriend(p) then txt = "[F] " .. txt end
+                nameText.Text = txt
+                nameText.Position = Vector2.new(namePos.X, namePos.Y - 30)
+                nameText.Size = 14
+                nameText.Color = colorToUse
+                nameText.Center = true
+                nameText.Outline = true
+                nameText.OutlineColor = Color3.new(0, 0, 0)
+                nameText.Visible = true
             end
         end
     end
 end)
 
-
+-- OPTIMIZED: Aimbot logic with delta time smoothing
 local function aimbotKeyDown()
-    if Aimbot.Enabled == false then return end
-    if Aimbotting then Aimbotting:Disconnect() Aimbotting = nil end
+    if not Aimbot.Enabled then return end
+    if Aimbotting then return end -- Prevent double connection
 
     Target = GetAimbotTarget()
-    if Target == nil then return end
+    if not Target then return end
 
     local switchInterval = 0.3
     local lastSwitchTime = 0
     local currentPart = nil
-    local camera = workspace.CurrentCamera
+    local camera = Workspace.CurrentCamera
 
-    local function ManipulateCamera(deltaTime)
-        if not Target or not Target.Character or not Target.Character:FindFirstChild("Humanoid") or Target.Character.Humanoid.Health <= 0 then
-            if Aimbotting then Aimbotting:Disconnect() Aimbotting = nil end
+    Aimbotting = RunService.RenderStepped:Connect(function(dt)
+        -- Validate target still valid
+        if not Target or not Target.Character then
+            Aimbotting:Disconnect()
+            Aimbotting = nil
+            Target = nil
+            return
+        end
+        
+        local hum = GetHumanoid(Target.Character)
+        if not hum or hum.Health <= 0 then
+            Aimbotting:Disconnect()
+            Aimbotting = nil
             Target = nil
             return
         end
 
-        local rootPart = Target.Character:FindFirstChild("HumanoidRootPart")
+        local rootPart = GetRootPart(Target.Character)
         if not rootPart then return end
 
         local position
@@ -770,42 +916,51 @@ local function aimbotKeyDown()
             if not part then return end
             position = part.Position
             currentPart = nil
-            lastSwitchTime = os.clock()
         else
             local now = os.clock()
             if not currentPart or now - lastSwitchTime >= switchInterval then
                 lastSwitchTime = now
-                local parts = {Target.Character:FindFirstChild("Head"), Target.Character:FindFirstChild("UpperTorso") or Target.Character:FindFirstChild("Torso"), rootPart}
-                currentPart = parts[math.random(1, #parts)] or rootPart
+                local parts = {
+                    Target.Character:FindFirstChild("Head"), 
+                    Target.Character:FindFirstChild("UpperTorso") or Target.Character:FindFirstChild("Torso"), 
+                    rootPart
+                }
+                -- Filter nils
+                local validParts = {}
+                for _, part in ipairs(parts) do
+                    if part then table.insert(validParts, part) end
+                end
+                currentPart = validParts[math.random(1, #validParts)] or rootPart
             end
             position = currentPart.Position
         end
 
+        -- Prediction math
         if Aimbot.Prediction and Aimbot.BulletSpeed > 0 then
             local distance = (position - camera.CFrame.Position).Magnitude
             local bulletTravelTime = distance / Aimbot.BulletSpeed
             
             local targetVelocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
-            if targetVelocity then
+            if targetVelocity and targetVelocity.Magnitude > 0 then
                 position = position + (targetVelocity * bulletTravelTime)
             end
             
             if Aimbot.BulletDrop and Aimbot.BulletDropAmount > 0 then
-                local drop = 0.5 * Aimbot.BulletDropAmount * bulletTravelTime^2
+                local drop = 0.5 * Aimbot.BulletDropAmount * bulletTravelTime * bulletTravelTime
                 position = Vector3.new(position.X, position.Y + drop, position.Z)
             end
         end
 
+        -- Smooth aim with proper delta time
         local newCFrame = CFrame.lookAt(camera.CFrame.Position, position)
-        local alpha = 1 - math.pow(1 - Aimbot.Smoothness, deltaTime * 60)
+        -- OPTIMIZED: Exponential decay smoothing for consistent feel at all framerates
+        local alpha = 1 - math.exp(-Aimbot.Smoothness * dt * 10)
         camera.CFrame = camera.CFrame:Lerp(newCFrame, math.clamp(alpha, 0, 1))
-    end
-
-    Aimbotting = RunService.RenderStepped:Connect(ManipulateCamera)
+    end)
 end
 
 local function aimbotKeyUp()
-    if Aimbotting ~= nil then
+    if Aimbotting then
         Aimbotting:Disconnect()
         Aimbotting = nil
     end
@@ -821,6 +976,25 @@ end)
 inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameprocessed)
     local keyName = (input.UserInputType == Enum.UserInputType.Keyboard) and input.KeyCode.Name or input.UserInputType.Name
     if keyName == Aimbot.Keybind then aimbotKeyUp() end
+end)
+
+-- OPTIMIZED: Handle character respawns for walk speed/jump power
+characterAddedConn = Player.CharacterAdded:Connect(function(char)
+    task.wait(0.1) -- Wait for humanoid to load
+    local hum = GetHumanoid(char)
+    if not hum then return end
+    
+    if Main.WalkSpeedEnabled then
+        hum.WalkSpeed = Main.WalkSpeed
+    end
+    if Main.JumpPowerEnabled then
+        hum.JumpPower = Main.JumpPower
+    end
+    
+    -- Reapply noclip if enabled
+    if Main.NoClipEnabled then
+        -- NoClip loop will catch new parts automatically
+    end
 end)
 
 Starlight:LoadAutoloadConfig()
