@@ -61,8 +61,10 @@ local Aimbot = {
     Keybind = "MouseButton2", Visualizer = false
 }
 
+-- UPDATED COMBAT SETTINGS
 local Combat = {
-    Triggerbot = false, TriggerDelay = 0.05, NoRecoil = false
+    Triggerbot = false, TriggerbotTeamCheck = false, TriggerbotHumanize = false,
+    TriggerDelay = 0.05, TriggerbotMaxDistance = 500, NoRecoil = false
 }
 
 local Visuals = {
@@ -281,7 +283,6 @@ AimbotSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.Range = Value end
 }, "Range_Slider")
 
--- FIXED: More responsive smoothness range
 AimbotSettingsGroupbox:CreateSlider({
     Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), 
     Range = {0.01, 1}, 
@@ -318,9 +319,13 @@ PredictionSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
--- Combat Tab
+-- Combat Tab (UPDATED WITH NEW OPTIONS)
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
+WeaponGroup:CreateToggle({ Name = "Team Check", CurrentValue = false, Style = 2, Callback = function(v) Combat.TriggerbotTeamCheck = v end }, "Triggerbot_Team_Toggle")
+WeaponGroup:CreateToggle({ Name = "Humanize Delay", CurrentValue = false, Style = 2, Callback = function(v) Combat.TriggerbotHumanize = v end }, "Triggerbot_Humanize_Toggle")
 WeaponGroup:CreateSlider({ Name = "Trigger Delay", Range = {0, 1}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Combat.TriggerDelay = v end }, "TriggerDelay_Slider")
+WeaponGroup:CreateSlider({ Name = "Max Distance", Range = {10, 2000}, Increment = 10, CurrentValue = 500, Callback = function(v) Combat.TriggerbotMaxDistance = v end }, "TriggerDistance_Slider")
+
 WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, Callback = function(v) Combat.NoRecoil = v end }, "NoRecoil_Toggle")
 
 -- Visuals Tab
@@ -507,7 +512,7 @@ local function IsVisible(part)
     return true
 end
 
--- Triggerbot
+-- UPDATED TRIGGERBOT
 local triggerbotDebounce = false
 local lastTriggerTime = 0
 
@@ -522,7 +527,7 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     local ray = camera:ViewportPointToRay(mouseLoc.X, mouseLoc.Y)
     
     raycastParams.FilterDescendantsInstances = {Player.Character}
-    local result = Workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+    local result = Workspace:Raycast(ray.Origin, ray.Direction * Combat.TriggerbotMaxDistance, raycastParams)
     
     if not result or not result.Instance then return end
     
@@ -535,12 +540,22 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
     local hitPlayer = Players:GetPlayerFromCharacter(model)
     if not hitPlayer or hitPlayer == Player then return end
     
-    if Aimbot.TeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
+    if Combat.TriggerbotTeamCheck and hitPlayer.Team and Player.Team and hitPlayer.Team == Player.Team then return end
     
     if mouse1press and mouse1release then
         triggerbotDebounce = true
         lastTriggerTime = now
+        
         task.spawn(function()
+            local currentDelay = Combat.TriggerDelay
+            if Combat.TriggerbotHumanize then
+                -- Randomize the wait time to make clicks look authentic
+                local jitter = currentDelay * 0.5
+                currentDelay = currentDelay + (math.random() * jitter * 2 - jitter)
+                if currentDelay < 0 then currentDelay = 0 end
+            end
+            
+            task.wait(currentDelay)
             mouse1press()
             task.wait(0.05)
             mouse1release()
@@ -841,7 +856,6 @@ espLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- FIXED: Responsive Aimbot with original smoothing algorithm
 local function aimbotKeyDown()
     if not Aimbot.Enabled then return end
     if Aimbotting then return end
@@ -912,7 +926,6 @@ local function aimbotKeyDown()
             end
         end
 
-        -- FIXED: Original responsive smoothing algorithm
         local newCFrame = CFrame.lookAt(camera.CFrame.Position, position)
         local alpha = 1 - math.pow(1 - Aimbot.Smoothness, dt * 60)
         camera.CFrame = camera.CFrame:Lerp(newCFrame, math.clamp(alpha, 0, 1))
