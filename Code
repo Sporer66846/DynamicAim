@@ -11,6 +11,7 @@ local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/neb
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 local espFolder = Instance.new("Folder")
+espFolder.Name = "DynamicAim_ESP"
 espFolder.Parent = (gethui and gethui()) or game:GetService("CoreGui")
 
 -- Logic Variables
@@ -20,6 +21,32 @@ local Aimbotting = nil
 local rainbowing = nil
 local Noclipping = nil
 local ClippingParts = {}
+
+-- Skeleton Connections
+local R6_Connections = {
+    {"Head", "Torso"},
+    {"Torso", "Left Arm"},
+    {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"},
+    {"Torso", "Right Leg"}
+}
+
+local R15_Connections = {
+    {"Head", "UpperTorso"},
+    {"UpperTorso", "LowerTorso"},
+    {"UpperTorso", "LeftUpperArm"},
+    {"LeftUpperArm", "LeftLowerArm"},
+    {"LeftLowerArm", "LeftHand"},
+    {"UpperTorso", "RightUpperArm"},
+    {"RightUpperArm", "RightLowerArm"},
+    {"RightLowerArm", "RightHand"},
+    {"LowerTorso", "LeftUpperLeg"},
+    {"LeftUpperLeg", "LeftLowerLeg"},
+    {"LeftLowerLeg", "LeftFoot"},
+    {"LowerTorso", "RightUpperLeg"},
+    {"RightUpperLeg", "RightLowerLeg"},
+    {"RightLowerLeg", "RightFoot"}
+}
 
 -- Prediction Dot Setup
 local PredDotDrawing = Drawing.new("Circle")
@@ -31,13 +58,15 @@ PredDotDrawing.Radius = 4
 PredDotDrawing.Visible = false
 
 -- Connection Storage
-local fovHeartbeat, combatHeartbeat, noRecoilRender, espLoop, aimbotRender
+local fovHeartbeat, combatHeartbeat, noRecoilRender, espLoop, aimbotRender, cframeSpeedConn, infiniteJumpConn
 local inputBeganConn, inputEndedConn, playerRemovingConn, characterAddedConn
 
 -- State Tables
 local Main = {
     WalkSpeedEnabled = false, WalkSpeed = 16,
+    CFrameSpeedEnabled = false, CFrameSpeed = 1,
     JumpPowerEnabled = false, JumpPower = 50,
+    InfiniteJump = false,
     NoClipEnabled = false, GravityEnabled = false, Gravity = 196.2
 }
 
@@ -57,18 +86,18 @@ local Aimbot = {
     Enabled = false, TeamCheck = false, VisibleCheck = false,
     TargetPart = AimbotTargetPart.Head, FOVCircle = false, FOV = 150,
     Range = 1000, Smoothness = 0.5, Filtering = AimbotFiltering.ClosestToMouse,
-    Prediction = false, BulletSpeed = 1500, BulletDrop = false, BulletDropAmount = 50,
+    StickyAim = false, Prediction = false, BulletSpeed = 1500, BulletDrop = false, BulletDropAmount = 50,
     Keybind = "MouseButton2", Visualizer = false
 }
 
--- UPDATED COMBAT SETTINGS
 local Combat = {
     Triggerbot = false, TriggerbotTeamCheck = false, TriggerbotHumanize = false,
     TriggerDelay = 0.05, TriggerbotMaxDistance = 500, NoRecoil = false
 }
 
 local Visuals = {
-    ESP = false, ESPColor = Color3.fromRGB(255, 255, 255), ESPHighlights = true,
+    ESP = false, ESPMode = "Highlight", ESPColor = Color3.fromRGB(255, 255, 255),
+    HealthBar = false, Distance = false,
     Tracers = false, TracerColor = Color3.fromRGB(255, 255, 255),
     Rainbow = false, InverseFriends = false, UseTeamColor = false,
     CurrentColor = Color3.new(1, 1, 1)
@@ -136,6 +165,16 @@ CharacterGroupbox:CreateSlider({
 }, "WalkSpeed_Slider")
 
 CharacterGroupbox:CreateToggle({
+    Name = "CFrame Speed (Bypass)", CurrentValue = false, Style = 2,
+    Callback = function(Value) Main.CFrameSpeedEnabled = Value end
+}, "CFrameSpeed_Toggle")
+
+CharacterGroupbox:CreateSlider({
+    Name = "CFrame Speed Amount", Icon = NebulaIcons:GetIcon('zap', 'Lucide'), Range = {0.1, 10}, Increment = 0.1, CurrentValue = Main.CFrameSpeed or 1,
+    Callback = function(Value) Main.CFrameSpeed = Value end
+}, "CFrameSpeed_Slider")
+
+CharacterGroupbox:CreateToggle({
     Name = "JumpPower Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Main.JumpPowerEnabled = Value
@@ -154,6 +193,11 @@ CharacterGroupbox:CreateSlider({
         end
     end
 }, "JumpPower_Slider")
+
+CharacterGroupbox:CreateToggle({
+    Name = "Infinite Jump", CurrentValue = false, Style = 2,
+    Callback = function(Value) Main.InfiniteJump = Value end
+}, "InfiniteJump_Toggle")
 
 -- NoClip with proper state management
 local function UpdateNoClipState()
@@ -213,6 +257,11 @@ AimbotSettingsGroupbox:CreateToggle({
     Name = "Enabled", CurrentValue = false, Style = 2,
     Callback = function(Value) Aimbot.Enabled = Value end
 }, "Aimbot_Toggle")
+
+AimbotSettingsGroupbox:CreateToggle({
+    Name = "Sticky Aim (Target Lock)", CurrentValue = false, Style = 2,
+    Callback = function(Value) Aimbot.StickyAim = Value end
+}, "StickyAim_Toggle")
 
 AimbotSettingsGroupbox:CreateToggle({
     Name = "Team Check", CurrentValue = false, Style = 2,
@@ -285,9 +334,7 @@ AimbotSettingsGroupbox:CreateSlider({
 
 AimbotSettingsGroupbox:CreateSlider({
     Name = "Smoothness", Icon = NebulaIcons:GetIcon('chart-spline', 'Lucide'), 
-    Range = {0.01, 1}, 
-    Increment = 0.01,
-    CurrentValue = Aimbot.Smoothness or 0.5,
+    Range = {0.01, 1}, Increment = 0.01, CurrentValue = Aimbot.Smoothness or 0.5,
     Callback = function(Value) Aimbot.Smoothness = Value end
 }, "Smoothness_Slider")
 
@@ -319,7 +366,7 @@ PredictionSettingsGroupbox:CreateSlider({
     Callback = function(Value) Aimbot.BulletDropAmount = Value end
 }, "BulletDrop_Slider")
 
--- Combat Tab (UPDATED WITH NEW OPTIONS)
+-- Combat Tab
 WeaponGroup:CreateToggle({ Name = "Triggerbot", CurrentValue = false, Style = 2, Callback = function(v) Combat.Triggerbot = v end }, "Triggerbot_Toggle")
 WeaponGroup:CreateToggle({ Name = "Team Check", CurrentValue = false, Style = 2, Callback = function(v) Combat.TriggerbotTeamCheck = v end }, "Triggerbot_Team_Toggle")
 WeaponGroup:CreateToggle({ Name = "Humanize Delay", CurrentValue = false, Style = 2, Callback = function(v) Combat.TriggerbotHumanize = v end }, "Triggerbot_Humanize_Toggle")
@@ -330,12 +377,32 @@ WeaponGroup:CreateToggle({ Name = "No Recoil", CurrentValue = false, Style = 2, 
 
 -- Visuals Tab
 ESPSettingsGroupbox:CreateToggle({
-    Name = "Enabled", CurrentValue = false, Style = 2,
+    Name = "Enable ESP", CurrentValue = false, Style = 2,
     Callback = function(Value)
         Visuals.ESP = Value
         if not Value then espFolder:ClearAllChildren() end
     end
 }, "ESP_Toggle")
+
+local ESPModeLabel = ESPSettingsGroupbox:CreateLabel({ Name = "ESP Mode" }, "ESPMode_Label")
+ESPModeLabel:AddDropdown({
+    Options = {"Highlight", "Box", "Skeleton"},
+    CurrentOption = {"Highlight"}, MultipleOptions = false,
+    Callback = function(Options) 
+        Visuals.ESPMode = Options[1] 
+        espFolder:ClearAllChildren() -- Clear highlights on switch
+    end,
+}, "ESPMode_Dropdown")
+
+ESPSettingsGroupbox:CreateToggle({
+    Name = "Health Bar", CurrentValue = false, Style = 2,
+    Callback = function(Value) Visuals.HealthBar = Value end
+}, "HealthBar_Toggle")
+
+ESPSettingsGroupbox:CreateToggle({
+    Name = "Show Distance", CurrentValue = false, Style = 2,
+    Callback = function(Value) Visuals.Distance = Value end
+}, "Distance_Toggle")
 
 ESPSettingsGroupbox:CreateToggle({
     Name = "Tracers", CurrentValue = false, Style = 2,
@@ -388,6 +455,12 @@ local function UnloadScript()
     for player, drawings in pairs(ESPDrawings) do
         if drawings.Tracer then drawings.Tracer:Remove() end
         if drawings.NameText then drawings.NameText:Remove() end
+        if drawings.Box then drawings.Box:Remove() end
+        if drawings.HealthBarBg then drawings.HealthBarBg:Remove() end
+        if drawings.HealthBar then drawings.HealthBar:Remove() end
+        if drawings.Skeleton then
+            for _, line in ipairs(drawings.Skeleton) do line:Remove() end
+        end
         ESPDrawings[player] = nil
     end
 
@@ -400,7 +473,8 @@ local function UnloadScript()
     if combatHeartbeat then combatHeartbeat:Disconnect() end
     if noRecoilRender then noRecoilRender:Disconnect() end
     if espLoop then espLoop:Disconnect() end
-    if aimbotRender then aimbotRender:Disconnect() end
+    if cframeSpeedConn then cframeSpeedConn:Disconnect() end
+    if infiniteJumpConn then infiniteJumpConn:Disconnect() end
     if inputBeganConn then inputBeganConn:Disconnect() end
     if inputEndedConn then inputEndedConn:Disconnect() end
     if playerRemovingConn then playerRemovingConn:Disconnect() end
@@ -437,6 +511,26 @@ SocialsGroupbox:CreateButton({
     Callback = function() setclipboard("https://discord.gg/CSzZPNwUWY") end,
 }, "CopyDiscord_Button")
 
+-- Movement Logic (CFrame Speed & Infinite Jump)
+cframeSpeedConn = RunService.Heartbeat:Connect(function(dt)
+    if Main.CFrameSpeedEnabled and Player.Character then
+        local hum = GetHumanoid(Player.Character)
+        local hrp = GetRootPart(Player.Character)
+        if hum and hrp and hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (Main.CFrameSpeed * dt * 60))
+        end
+    end
+end)
+
+infiniteJumpConn = UserInputService.JumpRequest:Connect(function()
+    if Main.InfiniteJump then
+        local hum = GetHumanoid(Player.Character)
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
 -- Friend Cache with TTL
 local friendCache = {}
 local cacheTimestamps = {}
@@ -471,6 +565,12 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(targetPlayer)
     if drawings then
         if drawings.Tracer then drawings.Tracer:Remove() end
         if drawings.NameText then drawings.NameText:Remove() end
+        if drawings.Box then drawings.Box:Remove() end
+        if drawings.HealthBarBg then drawings.HealthBarBg:Remove() end
+        if drawings.HealthBar then drawings.HealthBar:Remove() end
+        if drawings.Skeleton then
+            for _, line in ipairs(drawings.Skeleton) do line:Remove() end
+        end
         ESPDrawings[targetPlayer] = nil
     end
     
@@ -512,7 +612,7 @@ local function IsVisible(part)
     return true
 end
 
--- UPDATED TRIGGERBOT
+-- Triggerbot
 local triggerbotDebounce = false
 local lastTriggerTime = 0
 
@@ -549,7 +649,6 @@ combatHeartbeat = RunService.Heartbeat:Connect(function()
         task.spawn(function()
             local currentDelay = Combat.TriggerDelay
             if Combat.TriggerbotHumanize then
-                -- Randomize the wait time to make clicks look authentic
                 local jitter = currentDelay * 0.5
                 currentDelay = currentDelay + (math.random() * jitter * 2 - jitter)
                 if currentDelay < 0 then currentDelay = 0 end
@@ -588,7 +687,7 @@ noRecoilRender = RunService.RenderStepped:Connect(function(dt)
             lastCameraCFrame = Workspace.CurrentCamera.CFrame
             frameAccumulator = 0
         else
-            frameAccumulator += dt
+            frameAccumulator = frameAccumulator + dt
             if frameAccumulator > (1/30) then
                 local currentCam = Workspace.CurrentCamera
                 currentCam.CFrame = CFrame.new(currentCam.CFrame.Position) * lastCameraCFrame.Rotation
@@ -646,6 +745,14 @@ local playerListCache = {}
 local lastPlayerCacheUpdate = 0
 
 local function GetAimbotTarget()
+    if Aimbot.StickyAim and Target and ValidTargetCheck(Target) then
+        local dist = GetPlayerDistance(Target)
+        local checkFOV = GetMouseDistanceToPlayer(Target)
+        if dist <= Aimbot.Range and checkFOV <= Aimbot.FOV then
+            return Target
+        end
+    end
+
     local now = tick()
     if now - lastPlayerCacheUpdate > (1/60) then
         playerListCache = Players:GetPlayers()
@@ -788,16 +895,30 @@ espLoop = RunService.Heartbeat:Connect(function()
         if not ESPDrawings[p] then
             ESPDrawings[p] = { 
                 Tracer = Drawing.new("Line"), 
-                NameText = Drawing.new("Text")
+                NameText = Drawing.new("Text"),
+                Box = Drawing.new("Square"),
+                HealthBarBg = Drawing.new("Line"),
+                HealthBar = Drawing.new("Line"),
+                Skeleton = {}
             }
+            for i = 1, 14 do
+                ESPDrawings[p].Skeleton[i] = Drawing.new("Line")
+            end
         end
 
         local drawings = ESPDrawings[p]
         local tracer = drawings.Tracer
         local nameText = drawings.NameText
+        local box = drawings.Box
+        local healthBg = drawings.HealthBarBg
+        local healthBar = drawings.HealthBar
         
         tracer.Visible = false
         nameText.Visible = false
+        box.Visible = false
+        healthBg.Visible = false
+        healthBar.Visible = false
+        for _, line in ipairs(drawings.Skeleton) do line.Visible = false end
 
         local char = p.Character
         local hum = GetHumanoid(char)
@@ -812,7 +933,9 @@ espLoop = RunService.Heartbeat:Connect(function()
         local colorToUse = (Target == p) and Color3.new(1, 0, 0) or getColorForPlayer(p)
         local head = char:FindFirstChild("Head")
         
-        if Visuals.ESP then
+        -- HIGHLIGHT ESP
+        local isHighlight = (Visuals.ESP and Visuals.ESPMode == "Highlight")
+        if isHighlight then
             local espObj = espFolder:FindFirstChild(p.Name .. "_ESP")
             if not espObj then
                 espObj = GetPooledHighlight()
@@ -826,6 +949,32 @@ espLoop = RunService.Heartbeat:Connect(function()
             if espObj then espObj:Destroy() end
         end
 
+        -- SKELETON ESP
+        if Visuals.ESP and Visuals.ESPMode == "Skeleton" then
+            local isR15 = hum.RigType == Enum.HumanoidRigType.R15
+            local connections = isR15 and R15_Connections or R6_Connections
+            
+            for i, conn in ipairs(connections) do
+                local part1 = char:FindFirstChild(conn[1])
+                local part2 = char:FindFirstChild(conn[2])
+                
+                if part1 and part2 then
+                    local p1, on1 = worldToScreen(part1.Position)
+                    local p2, on2 = worldToScreen(part2.Position)
+                    
+                    if on1 and on2 then
+                        local line = drawings.Skeleton[i]
+                        line.From = p1
+                        line.To = p2
+                        line.Color = colorToUse
+                        line.Thickness = 1.5
+                        line.Visible = true
+                    end
+                end
+            end
+        end
+
+        -- TRACERS
         if Visuals.Tracers then
             local screenPos, onScreen = worldToScreen(hrp.Position)
             if onScreen then
@@ -838,11 +987,58 @@ espLoop = RunService.Heartbeat:Connect(function()
             end
         end
 
+        -- BOX & HEALTH BAR MATH
+        local topPos = head and (head.Position + Vector3.new(0, 0.5, 0)) or (hrp.Position + Vector3.new(0, 2, 0))
+        local botPos = hrp.Position - Vector3.new(0, 3, 0)
+        local topScreen, topOn = worldToScreen(topPos)
+        local botScreen, botOn = worldToScreen(botPos)
+
+        if topOn and botOn then
+            local height = math.abs(botScreen.Y - topScreen.Y)
+            local width = height * 0.6
+
+            -- BOX ESP
+            if Visuals.ESP and Visuals.ESPMode == "Box" then
+                box.Size = Vector2.new(width, height)
+                box.Position = Vector2.new(topScreen.X - width / 2, topScreen.Y)
+                box.Color = colorToUse
+                box.Thickness = 1.5
+                box.Filled = false
+                box.Visible = true
+            end
+
+            -- HEALTH BAR
+            if Visuals.HealthBar then
+                local boxX = topScreen.X - width / 2
+                
+                healthBg.From = Vector2.new(boxX - 5, topScreen.Y)
+                healthBg.To = Vector2.new(boxX - 5, botScreen.Y)
+                healthBg.Color = Color3.new(0.2, 0.2, 0.2)
+                healthBg.Thickness = 3
+                healthBg.Visible = true
+
+                local healthRatio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                local barHeight = height * healthRatio
+
+                healthBar.From = Vector2.new(boxX - 5, botScreen.Y)
+                healthBar.To = Vector2.new(boxX - 5, botScreen.Y - barHeight)
+                healthBar.Color = Color3.new(1 - healthRatio, healthRatio, 0)
+                healthBar.Thickness = 1.5
+                healthBar.Visible = true
+            end
+        end
+
+        -- NAME & DISTANCE
         if Visuals.ESP and head then
             local namePos, onScreen = worldToScreen(head.Position + Vector3.new(0, 3, 0))
             if onScreen then
                 local txt = p.Name
                 if isPlayerFriend(p) then txt = "[F] " .. txt end
+                if Visuals.Distance then 
+                    local dist = math.floor(GetPlayerDistance(p))
+                    txt = txt .. " [" .. dist .. "s]"
+                end
+                
                 nameText.Text = txt
                 nameText.Position = Vector2.new(namePos.X, namePos.Y - 30)
                 nameText.Size = 14
